@@ -72,6 +72,8 @@ ecommerce-recommender-azure/
 │   │   ├── meta_sample.jsonl
 │   │   └── review_sample.jsonl
 │   └── processed/                 # Dữ liệu sau ETL sẵn sàng huấn luyện
+├── notebooks/
+│   └── 01_ecommerce_recommender_pipeline.ipynb # Jupyter Notebook (EDA, Train, Eval trên Colab)
 ├── ml_pipeline/                   # Module ETL và Huấn luyện mô hình
 │   ├── __init__.py
 │   ├── config.py                  # Cấu hình tham số, Azure Connection Strings
@@ -132,9 +134,14 @@ ecommerce-recommender-azure/
 │   ├── recommender-service.yaml   # Service định tuyến traffic Blue/Green
 │   └── ingress.yaml
 ├── scripts/
-│   ├── latency_benchmark.py       # Kịch bản đo độ trễ Network & Storage
-│   └── seed_products.py           # Import danh mục sản phẩm vào Web DB
+│   ├── init_azure_storage.py             # Khởi tạo Azure Cosmos DB & Blob Containers
+│   ├── latency_benchmark.py              # Kịch bản đo độ trễ Network & Storage
+│   └── sql/                              # 📌 [BỔ SUNG] QUẢN LÝ CSDL POSTGRESQL
+│       ├── 01_init_auth_db.sql           # Tạo Schema, Bảng Users, Roles & Ràng buộc
+│       ├── 02_init_order_db.sql          # Tạo Schema, Bảng Orders, OrderItems & Ràng buộc
+│       └── 03_seed_data.sql              # Nạp dữ liệu mẫu (Users, Products, Orders) để Debug API
 ├── docker-compose.yml             # Môi trường chạy kiểm thử cục bộ
+├── .env.example                          # [File] Mẫu cấu hình biến môi trường (Azure key, DB_URL)
 └── README.md
 
 ```
