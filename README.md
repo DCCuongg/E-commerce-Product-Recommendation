@@ -75,12 +75,12 @@ ecommerce-recommender-azure/
 ├── notebooks/
 │   └── 01_ecommerce_recommender_pipeline.ipynb # Jupyter Notebook (EDA, Train, Eval trên Colab)
 ├── ml_pipeline/                   # Module ETL và Huấn luyện mô hình
-│   ├── __init__.py
-│   ├── config.py                  # Cấu hình tham số, Azure Connection Strings
-│   ├── etl_extractor.py           # Bước 1: Trích xuất và làm sạch dữ liệu Amazon
-│   ├── feature_engineering.py     # Bước 2: Xây dựng ma trận tương tác User-Item
-│   ├── train_recommender.py       # Bước 3: Huấn luyện ALS / SVD / Item-to-Item
-│   └── export_to_cosmos.py        # Bước 4: Đẩy kết quả Top-K và vectors vào Cosmos DB
+│   ├── __init__.py                # Khởi tạo package
+│   ├── config.py                  # Nạp biến môi trường (.env), quản trị kết nối PostgreSQL, Blob & Cosmos DB Connection Strings
+│   ├── etl_extractor.py           # Trích xuất dữ liệu từ PostgreSQL & Blob Storage (không dùng Hugging Face) sạch dữ liệu Amazon
+│   ├── pipeline_runner.py         # Điểm kích hoạt toàn bộ luồng tự động (cho CronJob / Airflow / Docker)
+│   ├── train_recommender.py       # Huấn luyện Hybrid Similarity & SVD, tự động đẩy artifact lên Azure Blob SVD / Item-to-Item
+│   └── export_to_cosmos.py        # Tính toán Top-K và upsert trực tiếp vào 3 Containers của Cosmos DB
 ├── services/
 │   ├── auth_service/              # Microservice 1: Quản lý người dùng & phân quyền
 │   │   ├── Dockerfile
@@ -432,14 +432,12 @@ Quy trình triển khai chia làm 5 bước lớn, thực hiện tuần tự the
 ```
 
 ### Bước 1: Pipeline Dữ liệu và Mô hình học máy
-
+0. Xây dựng dữ liệu mẩu và khởi tạo các DB củng như train model ban đầu.
 1. Viết `ml_pipeline/config.py`: Định nghĩa các chuỗi kết nối Azure Blob, Cosmos DB, đường dẫn thư mục và siêu tham số mô hình.
-2. Viết `ml_pipeline/etl_extractor.py`: Đọc file mẫu Amazon Reviews 2023, làm sạch các trường dữ liệu thiếu, lọc danh sách 1,000 sản phẩm và 5,000 tương tác tiêu biểu.
+2. Viết `ml_pipeline/etl_extractor.py`: Đọc dữ liệu trong hệ thống để cập nhật models và recommender...
 3. Viết `ml_pipeline/train_recommender.py`:
 * Xây dựng ma trận tương quan giữa các sản phẩm (Item-to-Item Cosine Similarity).
 * Huấn luyện mô hình phân rã ma trận (Matrix Factorization) để sinh danh sách Top-10 sản phẩm cho từng `user_id`.
-
-
 4. Viết `ml_pipeline/export_to_cosmos.py`: Kết nối Azure Cosmos DB và lưu dữ liệu đã tiền tính toán (Precomputed Recommendations) dưới dạng tài liệu NoSQL.
 
 ### Bước 2: Xây dựng Microservices Backend & Azure Function
