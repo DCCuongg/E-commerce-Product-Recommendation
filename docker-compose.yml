@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ecommerce_postgres_dev
+    restart: always
+    environment:
+      POSTGRES_DB: ecommerce_shop_db
+      POSTGRES_USER: postgres_admin
+      POSTGRES_PASSWORD: YourSecurePasswordHere123!
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/sql/01_init_auth_db.sql:/docker-entrypoint-initdb.d/01_init_auth_db.sql:ro
+      - ./scripts/sql/02_init_order_db.sql:/docker-entrypoint-initdb.d/02_init_order_db.sql:ro
+      - ./scripts/sql/03_seed_auth.sql:/docker-entrypoint-initdb.d/03_seed_auth.sql:ro
+      # Sửa đường dẫn trỏ đúng vào scripts/sql/seed_products.sql
+      - ./scripts/sql/seed_products.sql:/docker-entrypoint-initdb.d/04_seed_products.sql:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres_admin -d ecommerce_shop_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: ecommerce_azurite_dev
+    restart: always
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck --loose"
+    ports:
+      - "10000:10000"
+    volumes:
+      - azurite_data:/data
+
+  cosmos-emulator:
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-preview
+    container_name: ecommerce_cosmos_dev
+    restart: always
+    environment:
+      AZURE_COSMOS_EMULATOR_PARTITION_COUNT: 5
+      AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE: "true"
+    ports:
+      - "8081:8081"
+    volumes:
+      - cosmos_data:/tmp/cosmos/appdata
+
+volumes:
+  postgres_data:
+  azurite_data:
+  cosmos_data:
