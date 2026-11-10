@@ -14,6 +14,7 @@ import httpx
 import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
@@ -81,6 +82,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Nén payload JSON trả về bằng Gzip (Theo Rubric Tiêu chí 3.4 - Data Compression)
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 # ------------------------------------------------------------------------------

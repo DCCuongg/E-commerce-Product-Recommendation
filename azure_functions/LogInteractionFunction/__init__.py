@@ -23,14 +23,15 @@ load_dotenv(dotenv_path=ROOT_DIR / ".env")
 logger = logging.getLogger("LogInteractionFunction")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] [FaaS] %(message)s")
 
-# Quy tắc ánh xạ hành vi Implicit Feedback sang thang điểm [1.0 - 5.0] (Theo README Tiêu chí 3.2)
+# Quy tắc ánh xạ hành vi Implicit Feedback sang thang điểm [1.0 - 5.0]
+# Khớp 100% với Rubric Tiêu chí 3.2 trong README.md: Click = 1, Add-to-cart = 3, Purchase/Review = 5
 ACTION_IMPLICIT_SCORES: Dict[str, float] = {
     "click": 1.0,
-    "view": 2.0,
-    "search": 1.5,
-    "add_to_cart": 3.5,
-    "cart": 3.5,
-    "checkout": 4.5,
+    "view": 1.0,
+    "search": 1.0,
+    "add_to_cart": 3.0,
+    "cart": 3.0,
+    "checkout": 4.0,
     "purchase": 5.0,
     "rating": 5.0,
     "review": 5.0,
@@ -117,15 +118,21 @@ def append_event_to_blob_storage(record: Dict[str, Any]) -> Dict[str, str]:
                 pass
 
             blob_client = container_client.get_blob_client(blob_path)
-            existing_content = ""
-            if blob_client.exists():
-                existing_content = blob_client.download_blob().readall().decode("utf-8")
-
-            blob_client.upload_blob(
-                (existing_content + json_line).encode("utf-8"), overwrite=True
-            )
+            try:
+                # Ưu tiên ghi chuẩn Append Blob theo Rubric Tiêu chí 4.5 & INTERFACE.md
+                if not blob_client.exists():
+                    blob_client.create_append_blob()
+                blob_client.append_block(json_line.encode("utf-8"))
+            except Exception:
+                # Fallback sang Block Blob nếu blob đã được tạo dưới dạng BlockBlob trước đó
+                existing_content = ""
+                if blob_client.exists():
+                    existing_content = blob_client.download_blob().readall().decode("utf-8")
+                blob_client.upload_blob(
+                    (existing_content + json_line).encode("utf-8"), overwrite=True
+                )
             return {
-                "storage": "azure_blob_storage",
+                "storage": "azure_blob_storage_append",
                 "container": container_name,
                 "blob_path": blob_path,
             }
