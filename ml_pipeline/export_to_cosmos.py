@@ -10,11 +10,13 @@ import json
 import pickle
 import logging
 from datetime import datetime, timezone
+import urllib3
 import numpy as np
 import pandas as pd
 from azure.cosmos import CosmosClient
 from .config import Config
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -27,12 +29,21 @@ class CosmosDBExporter:
         self.database_client = None
 
     def init_cosmos(self) -> bool:
-        if not self.config.COSMOS_ENDPOINT or not self.config.COSMOS_KEY or "your-cosmos-account" in self.config.COSMOS_ENDPOINT:
+        if (
+            not self.config.COSMOS_ENDPOINT
+            or not self.config.COSMOS_KEY
+            or "your-cosmos-account" in self.config.COSMOS_ENDPOINT
+            or "<COSMOS" in self.config.COSMOS_KEY
+        ):
             logger.warning("Chưa cấu hình Azure Cosmos DB credentials. Chạy chế độ Dry-run lưu JSON cục bộ.")
             return False
 
         try:
-            self.cosmos_client = CosmosClient(self.config.COSMOS_ENDPOINT, credential=self.config.COSMOS_KEY)
+            self.cosmos_client = CosmosClient(
+                self.config.COSMOS_ENDPOINT,
+                credential=self.config.COSMOS_KEY,
+                connection_verify=self.config.COSMOS_SSL_VERIFY,
+            )
             self.database_client = self.cosmos_client.get_database_client(self.config.COSMOS_DATABASE_NAME)
             return True
         except Exception as e:
@@ -51,6 +62,7 @@ class CosmosDBExporter:
         df_interactions = pd.read_parquet(self.config.PROCESSED_INTERACTIONS_PARQUET)
 
         now_iso = datetime.now(timezone.utc).isoformat()
+        model_ver = svd_data.get("model_version", self.config.MODEL_VERSION)
 
         # ----------------------------------------------------------------------
         # 1. USER RECOMMENDATIONS (Container: user_recommendations)
@@ -78,11 +90,11 @@ class CosmosDBExporter:
                     break
 
             user_docs.append({
-                "id": uid,
-                "user_id": uid,
+                "id": str(uid),
+                "user_id": str(uid),
                 "recommendations": recs,
-                "model_version": svd_data.get("model_version", "v1.0-svd"),
-                "updated_at": now_iso
+                "model_version": model_ver,
+                "updated_at": now_iso,
             })
 
         # ----------------------------------------------------------------------
@@ -90,7 +102,7 @@ class CosmosDBExporter:
         # ----------------------------------------------------------------------
         logger.info("[COSMOS 2/3] Tính toán Top-5 Bundle Mua Cùng cho từng Sản phẩm...")
         item2idx = svd_data["item2idx"]
-        cat_map = dict(zip(df_products["product_id"], df_products["category"]))
+        cat_map = dict(zip(df_products["product_id"].astype(str), df_products["category"]))
 
         item_docs = []
         for pid, it_idx in item2idx.items():
@@ -100,20 +112,22 @@ class CosmosDBExporter:
 
             bundles = []
             base_cat = cat_map.get(pid, "")
-            for b_idx in top_indices:
+            for rank_idx, b_idx in enumerate(top_indices, start=1):
                 b_pid = idx2item[b_idx]
                 b_cat = cat_map.get(b_pid, "")
                 bundles.append({
                     "product_id": b_pid,
                     "similarity_score": round(float(sims[b_idx]), 4),
-                    "bundle_type": "accessory" if (base_cat and b_cat and base_cat != b_cat) else "co-purchase"
+                    "bundle_type": "accessory" if (base_cat and b_cat and base_cat != b_cat) else "co-purchase",
+                    "rank": rank_idx,
                 })
 
             item_docs.append({
-                "id": pid,
-                "product_id": pid,
+                "id": str(pid),
+                "product_id": str(pid),
                 "frequently_bought_together": bundles,
-                "updated_at": now_iso
+                "model_version": model_ver,
+                "updated_at": now_iso,
             })
 
         # ----------------------------------------------------------------------
@@ -122,23 +136,29 @@ class CosmosDBExporter:
         logger.info("[COSMOS 3/3] Tính toán Top Trending cho Cold-Start Fallback...")
         df_popular = df_products.sort_values(by=["rating_count", "rating"], ascending=[False, False]).head(10)
         popular_items = [
-            {"product_id": str(r["product_id"]), "name": str(r["name"]), "price": float(r["price"]), "rank": idx}
+            {
+                "product_id": str(r["product_id"]),
+                "name": str(r["name"]),
+                "price": float(r["price"]),
+                "rank": idx,
+            }
             for idx, (_, r) in enumerate(df_popular.iterrows(), start=1)
         ]
         meta_doc = {
             "id": "popular_items",
             "type": "cold_start_fallback",
+            "category": self.config.ML_TARGET_CATEGORY,
+            "popular_product_ids": [it["product_id"] for it in popular_items],
             "items": popular_items,
-            "updated_at": now_iso
+            "model_version": model_ver,
+            "updated_at": now_iso,
         }
 
-        # Lưu bản JSON mẫu cục bộ để kiểm tra / mock test
         with open(self.config.EXPORTS_DIR / "user_recs_sample.json", "w", encoding="utf-8") as f:
             json.dump(user_docs[:20], f, indent=2, ensure_ascii=False)
         with open(self.config.EXPORTS_DIR / "item_recs_sample.json", "w", encoding="utf-8") as f:
             json.dump(item_docs[:20], f, indent=2, ensure_ascii=False)
 
-        # Đẩy lên Cosmos DB nếu có kết nối
         if dry_run or not self.init_cosmos():
             logger.info("Chế độ Dry-run: Dữ liệu đã lưu tại exports/.")
             return
@@ -160,6 +180,7 @@ class CosmosDBExporter:
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()

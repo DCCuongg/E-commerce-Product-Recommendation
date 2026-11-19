@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: recommender-service
+  namespace: ecommerce-rec
+  labels:
+    app: recommender
+spec:
+  type: ClusterIP
+  selector:
+    app: recommender
+    version: blue # Chuyển sang Green bằng lệnh: kubectl patch svc recommender-service -n ecommerce-rec -p '{"spec":{"selector":{"version":"green"}}}'
+  ports:
+    - name: http
+      port: 8003
+      targetPort: 8003

@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recommender-deployment-green
+  namespace: ecommerce-rec
+  labels:
+    app: recommender
+    version: green
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: recommender
+      version: green
+  template:
+    metadata:
+      labels:
+        app: recommender
+        version: green
+    spec:
+      containers:
+        - name: recommender-service
+          image: ${CONTAINER_REGISTRY}/ecommerce-recommender:${IMAGE_TAG}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8003
+          env:
+            - name: DEPLOYMENT_SLOT
+              value: "green"
+            - name: MODEL_VERSION
+              value: "v2.0-svd"
+          envFrom:
+            - configMapRef:
+                name: ecommerce-config
+            - secretRef:
+                name: ecommerce-secrets
+          resources:
+            requests:
+              cpu: "150m"
+              memory: "256Mi"
+            limits:
+              cpu: "450m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8003
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8003
+            initialDelaySeconds: 15
+            periodSeconds: 20
