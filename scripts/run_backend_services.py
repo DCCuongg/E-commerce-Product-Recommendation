@@ -61,7 +61,13 @@ SERVICES = [
         "cmd": [
             sys.executable,
             "-m",
-            "azure_functions.LogInteractionFunction",
+            "uvicorn",
+            "azure_functions.LogInteractionFunction:create_standalone_faas_app",
+            "--factory",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "7071",
         ],
     },
 ]
