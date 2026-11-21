@@ -15,6 +15,8 @@ import numpy as np
 import pandas as pd
 from azure.cosmos import CosmosClient
 from .config import Config
+import time
+from azure.cosmos.exceptions import CosmosHttpResponseError
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -50,16 +52,23 @@ class CosmosDBExporter:
             logger.error(f"Kết nối Cosmos DB thất bại: {str(e)}")
             return False
 
-    def run(self, dry_run: bool = False):
+    def run(self, dry_run: bool = False, force: bool = False):
+        df_products = pd.read_parquet(self.config.PROCESSED_PRODUCTS_PARQUET)
+        df_interactions = pd.read_parquet(self.config.PROCESSED_INTERACTIONS_PARQUET)
+
+        if not force and len(df_interactions) <= self.config.MIN_INTERACTIONS_TO_TRAIN:
+            logger.info(
+                f"Bỏ qua xuất Cosmos DB: Chỉ có {len(df_interactions)} tương tác "
+                f"(cần > {self.config.MIN_INTERACTIONS_TO_TRAIN}). Giữ nguyên dữ liệu gợi ý hiện tại."
+            )
+            return
+
         logger.info("=== BẮT ĐẦU TÍNH TOÁN VÀ XUẤT DỮ LIỆU SANG COSMOS DB ===")
         with open(self.config.SVD_MODEL_PATH, "rb") as f:
             svd_data = pickle.load(f)
 
         sim_data = np.load(self.config.ITEM_SIMILARITY_PATH)
         hybrid_sim = sim_data["similarity"]
-
-        df_products = pd.read_parquet(self.config.PROCESSED_PRODUCTS_PARQUET)
-        df_interactions = pd.read_parquet(self.config.PROCESSED_INTERACTIONS_PARQUET)
 
         now_iso = datetime.now(timezone.utc).isoformat()
         model_ver = svd_data.get("model_version", self.config.MODEL_VERSION)
@@ -172,10 +181,21 @@ class CosmosDBExporter:
         logger.info(f"Đang đồng bộ {len(documents)} tài liệu vào Container '{container_name}'...")
         container = self.database_client.get_container_client(container_name)
         for doc in documents:
-            try:
-                container.upsert_item(body=doc)
-            except Exception as e:
-                logger.error(f"Lỗi khi upsert ID {doc.get('id')}: {str(e)}")
+            for attempt in range(3):
+                try:
+                    container.upsert_item(body=doc)
+                    break
+                except CosmosHttpResponseError as e:
+                    if e.status_code == 429 and attempt < 2:
+                        retry_ms = e.headers.get("x-ms-retry-after-ms")
+                        wait_sec = (float(retry_ms) / 1000.0) if retry_ms else (0.2 * (2 ** attempt))
+                        time.sleep(wait_sec)
+                    else:
+                        logger.error(f"Lỗi khi upsert ID {doc.get('id')}: {str(e)}")
+                        break
+                except Exception as e:
+                    logger.error(f"Lỗi không xác định khi upsert ID {doc.get('id')}: {str(e)}")
+                    break
 
 
 if __name__ == "__main__":
@@ -183,7 +203,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--force", action="store_true", help="Bỏ qua kiểm tra ngưỡng tương tác tối thiểu")
     args = parser.parse_args()
 
     exporter = CosmosDBExporter()
-    exporter.run(dry_run=args.dry_run)
+    exporter.run(dry_run=args.dry_run, force=args.force)

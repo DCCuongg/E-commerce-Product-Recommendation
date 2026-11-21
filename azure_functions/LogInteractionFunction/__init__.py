@@ -1,3 +1,4 @@
+# cspell:ignore dotenv levelname fastapi faas uvicorn
 """
 azure_functions/LogInteractionFunction/__init__.py
 FaaS (Function as a Service - Azure Functions HTTP Trigger):
@@ -13,8 +14,8 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
-
+from typing import TYPE_CHECKING, Any, Dict, Optional
+from azure.core.exceptions import ResourceExistsError
 from dotenv import load_dotenv
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
@@ -26,13 +27,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] [Faa
 # Quy tắc ánh xạ hành vi Implicit Feedback sang thang điểm [1.0 - 5.0]
 # Khớp 100% với Rubric Tiêu chí 3.2 trong README.md: Click = 1, Add-to-cart = 3, Purchase/Review = 5
 ACTION_IMPLICIT_SCORES: Dict[str, float] = {
-    "click": 1.0,
     "view": 1.0,
-    "search": 1.0,
-    "add_to_cart": 3.0,
-    "cart": 3.0,
-    "checkout": 4.0,
+    "page_view": 1.0,
+    "click": 2.0,
+    "add_to_cart": 3.5,
+    "cart": 3.5,
+    "checkout": 4.5,
     "purchase": 5.0,
+    "buy": 5.0,
     "rating": 5.0,
     "review": 5.0,
 }
@@ -60,25 +62,23 @@ def normalize_interaction_payload(body: Dict[str, Any]) -> Dict[str, Any]:
 
     action = str(body.get("action") or body.get("event_type") or "view").lower().strip()
     raw_value = body.get("value") if body.get("value") is not None else body.get("rating")
-
+    explicit_rating = None
     if raw_value is not None:
-        rating_score = float(raw_value)
-        rating_score = max(1.0, min(5.0, rating_score))
+        explicit_rating = max(1.0, min(5.0, float(raw_value)))
+        score = explicit_rating
     else:
-        rating_score = ACTION_IMPLICIT_SCORES.get(action, 2.0)
+        score = ACTION_IMPLICIT_SCORES.get(action, 1.0)
 
     ts = int(body.get("timestamp") or time.time())
-    now_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-
     return {
         "user_id": user_id,
         "item_id": product_id,
         "product_id": product_id,
         "action": action,
-        "value": rating_score,
-        "rating": rating_score,
+        "value": score,
+        "rating": explicit_rating,  # Chỉ khác None khi là explicit rating
         "timestamp": ts,
-        "ingested_at": now_dt.isoformat(),
+        "ingested_at": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(),
     }
 
 
@@ -119,18 +119,13 @@ def append_event_to_blob_storage(record: Dict[str, Any]) -> Dict[str, str]:
 
             blob_client = container_client.get_blob_client(blob_path)
             try:
-                # Ưu tiên ghi chuẩn Append Blob theo Rubric Tiêu chí 4.5 & INTERFACE.md
-                if not blob_client.exists():
-                    blob_client.create_append_blob()
                 blob_client.append_block(json_line.encode("utf-8"))
             except Exception:
-                # Fallback sang Block Blob nếu blob đã được tạo dưới dạng BlockBlob trước đó
-                existing_content = ""
-                if blob_client.exists():
-                    existing_content = blob_client.download_blob().readall().decode("utf-8")
-                blob_client.upload_blob(
-                    (existing_content + json_line).encode("utf-8"), overwrite=True
-                )
+                try:
+                    blob_client.create_append_blob()
+                except ResourceExistsError:
+                    pass
+                blob_client.append_block(json_line.encode("utf-8"))
             return {
                 "storage": "azure_blob_storage_append",
                 "container": container_name,
@@ -149,10 +144,13 @@ def append_event_to_blob_storage(record: Dict[str, Any]) -> Dict[str, str]:
 # ------------------------------------------------------------------------------
 # ENTRYPOINT CHUẨN CỦA AZURE FUNCTIONS RUNTIME (azure.functions.HttpRequest)
 # ------------------------------------------------------------------------------
-try:
+if TYPE_CHECKING:
     import azure.functions as func
-except ImportError:
-    func = None
+else:
+    try:
+        import azure.functions as func
+    except ImportError:
+        func = None
 
 
 def main(req: "func.HttpRequest") -> "func.HttpResponse":

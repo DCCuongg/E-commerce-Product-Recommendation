@@ -135,11 +135,40 @@ jobs:
           TARGET_SLOT: ${{ inputs.target_slot }}
         run: |
           kubectl apply -f k8s/namespace.yaml
-          kubectl apply -f k8s/configmap-secrets.yaml
-          envsubst < k8s/auth-service-deploy.yaml | kubectl apply -f -
-          envsubst < k8s/order-service-deploy.yaml | kubectl apply -f -
-          envsubst < k8s/recommender-${TARGET_SLOT}.yaml | kubectl apply -f -
-          kubectl apply -f k8s/recommender-service.yaml
+
+          # 1. Nạp ConfigMap 'ecommerce-config' (tự lọc bỏ Secret placeholder nếu dùng chung file configmap-secrets.yaml)
+          if [ -f "k8s/configmap.yaml" ]; then
+            kubectl apply -f k8s/configmap.yaml
+          elif command -v yq >/dev/null 2>&1; then
+            yq 'select(.kind == "ConfigMap")' k8s/configmap-secrets.yaml | kubectl apply -f -
+          else
+            awk '/^---$/{exit} {print}' k8s/configmap-secrets.yaml | kubectl apply -f -
+          fi
+
+          # 2. Tạo/Cập nhật Secret 'ecommerce-secrets' trực tiếp từ GitHub Secrets
+          kubectl create secret generic ecommerce-secrets \
+            --namespace ecommerce-rec \
+            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
+            --from-literal=JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}" \
+            --from-literal=PAYMENT_WEBHOOK_SECRET="${{ secrets.PAYMENT_WEBHOOK_SECRET }}" \
+            --from-literal=COSMOS_DB_ENDPOINT="${{ secrets.COSMOS_DB_ENDPOINT }}" \
+            --from-literal=COSMOS_DB_PRIMARY_KEY="${{ secrets.COSMOS_DB_PRIMARY_KEY }}" \
+            --from-literal=AZURE_STORAGE_CONNECTION_STRING="${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # 3. Chỉ tạo recommender-service nếu chưa tồn tại để giữ nguyên selector slot đang chạy
+          kubectl get svc recommender-service -n ecommerce-rec >/dev/null 2>&1 || kubectl apply -f k8s/recommender-service.yaml
+
+          # 4. Giữ tối thiểu 1 replica cho slot đích ngay lúc apply (tránh gián đoạn nếu green đang active)
+          CURRENT_REPLICAS=$(kubectl get deployment recommender-deployment-${TARGET_SLOT} -n ecommerce-rec -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+          DESIRED_REPLICAS=$(( CURRENT_REPLICAS > 0 ? CURRENT_REPLICAS : 1 ))
+
+          envsubst '${CONTAINER_REGISTRY} ${IMAGE_TAG}' < k8s/auth-service-deploy.yaml | kubectl apply -f -
+          envsubst '${CONTAINER_REGISTRY} ${IMAGE_TAG}' < k8s/order-service-deploy.yaml | kubectl apply -f -
+          envsubst '${CONTAINER_REGISTRY} ${IMAGE_TAG}' < k8s/recommender-${TARGET_SLOT}.yaml \
+            | sed -E "s/^([[:space:]]*replicas:[[:space:]]*)[0-9]+/\1${DESIRED_REPLICAS}/" \
+            | kubectl apply -f -
+
           kubectl apply -f k8s/ingress.yaml
 
       - name: Xác nhận Rollout & Điều hướng Blue/Green
@@ -150,9 +179,19 @@ jobs:
           kubectl rollout status deployment/auth-service -n ecommerce-rec --timeout=120s
           kubectl rollout status deployment/order-service -n ecommerce-rec --timeout=120s
           kubectl rollout status deployment/recommender-deployment-${TARGET_SLOT} -n ecommerce-rec --timeout=120s
+
           if [ "${SWITCH_TRAFFIC}" = "true" ]; then
             kubectl patch service recommender-service -n ecommerce-rec -p "{\"spec\":{\"selector\":{\"app\":\"recommender\",\"version\":\"${TARGET_SLOT}\"}}}"
             echo "Active traffic routed to slot: ${TARGET_SLOT}"
+
+            if [ "${TARGET_SLOT}" = "green" ]; then
+              OLD_SLOT="blue"
+            else
+              OLD_SLOT="green"
+            fi
+
+            kubectl scale deployment/recommender-deployment-${OLD_SLOT} -n ecommerce-rec --replicas=0 || true
+            echo "Scaled down inactive slot (${OLD_SLOT}) to 0 replicas to save RAM on Standard_B2s."
           else
-            echo "Slot ${TARGET_SLOT} deployed successfully. Traffic kept on existing slot."
+            echo "Slot ${TARGET_SLOT} deployed (${DESIRED_REPLICAS} replica). Traffic kept on existing slot."
           fi

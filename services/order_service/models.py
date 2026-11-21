@@ -14,6 +14,7 @@ from urllib.parse import quote_plus
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -27,6 +28,7 @@ from sqlalchemy import (
     create_engine,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 # Nạp biến môi trường từ thư mục gốc dự án
@@ -84,6 +86,9 @@ class Product(Base):
     category = Column(String(100), index=True)
     price = Column(Numeric(10, 2), nullable=False, default=0.00)
     image_url = Column(Text, nullable=True)
+    hi_res_url = Column(Text, nullable=True)
+    large_urls = Column(JSONB, nullable=False, default=list)
+    thumb_url = Column(Text, nullable=True)
     stock_quantity = Column(
         Integer,
         CheckConstraint("stock_quantity >= 0", name="check_stock_non_negative"),
@@ -91,7 +96,11 @@ class Product(Base):
         default=100,
     )
     description = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class CartItem(Base):
@@ -192,25 +201,40 @@ class ProductResponse(BaseModel):
     category: Optional[str] = None
     price: float
     image_url: Optional[str] = None
+    hi_res_url: Optional[str] = None
+    large_urls: List[str] = Field(default_factory=list)
+    thumb_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     stock_quantity: int
     description: Optional[str] = None
+    is_active: bool = True
     rating: float = 4.6
     rating_count: int = 25
 
     @classmethod
     def from_orm_product(cls, p: Product, rating: float = 4.6, rating_count: int = 25):
-        price_val = float(p.price) if isinstance(p.price, Decimal) else float(p.price or 0.0)
+        price_val = (
+            float(p.price) if isinstance(p.price, Decimal) else float(p.price or 0.0)
+        )
+        large_list = [u for u in (p.large_urls or []) if u][:3]
+        hi_res = p.hi_res_url or (large_list[0] if large_list else p.image_url)
+        thumb = p.thumb_url or (large_list[0] if large_list else p.image_url)
+        primary_img = p.image_url or hi_res
+
         return cls(
             id=p.id,
             product_id=p.id,
             name=p.name,
             category=p.category,
             price=round(price_val, 2),
-            image_url=p.image_url,
-            thumbnail_url=p.image_url,
+            image_url=primary_img,
+            hi_res_url=hi_res,
+            large_urls=large_list,
+            thumb_url=thumb,
+            thumbnail_url=thumb,
             stock_quantity=p.stock_quantity,
             description=p.description,
+            is_active=bool(p.is_active) if p.is_active is not None else True,
             rating=rating,
             rating_count=rating_count,
         )
@@ -224,7 +248,9 @@ class PaginatedProductResponse(BaseModel):
 
 
 class BatchProductsRequest(BaseModel):
-    product_ids: List[str] = Field(..., description="Danh sách mã sản phẩm cần lấy thông tin")
+    product_ids: List[str] = Field(
+        ..., description="Danh sách mã sản phẩm cần lấy thông tin"
+    )
 
 
 # --- Schemas cho Giỏ hàng (Cart) ---
@@ -234,7 +260,9 @@ class AddToCartRequest(BaseModel):
 
 
 class UpdateCartItemRequest(BaseModel):
-    quantity: int = Field(..., ge=0, le=100, description="Đặt bằng 0 để xóa khỏi giỏ hàng")
+    quantity: int = Field(
+        ..., ge=0, le=100, description="Đặt bằng 0 để xóa khỏi giỏ hàng"
+    )
 
 
 class CartItemDetailResponse(BaseModel):
@@ -245,6 +273,7 @@ class CartItemDetailResponse(BaseModel):
     category: Optional[str] = None
     unit_price: float
     image_url: Optional[str] = None
+    thumb_url: Optional[str] = None
     stock_quantity: int
     quantity: int
     subtotal: float
@@ -280,6 +309,7 @@ class OrderItemResponse(BaseModel):
     product_id: str
     product_name: Optional[str] = None
     image_url: Optional[str] = None
+    thumb_url: Optional[str] = None
     quantity: int
     unit_price: float
     subtotal: float

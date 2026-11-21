@@ -1,8 +1,8 @@
 """
 ml_pipeline/etl_extractor.py
-Trích xuất danh mục sản phẩm từ PostgreSQL và tổng hợp lịch sử tương tác từ:
-1. Bảng `reviews` (Explicit rating 1-5 sao)
-2. Bảng `orders` & `order_items` (Implicit purchase = 5.0)
+Trích xuất danh mục sản phẩm đang mở bán (is_active = TRUE) từ PostgreSQL và tổng hợp lịch sử tương tác từ:
+1. Bảng `reviews` (Explicit rating 1-5 sao - giữ cả lịch sử của user đã is_disabled)
+2. Bảng `orders` & `order_items` (Implicit purchase = 5.0 - giữ cả lịch sử của user đã is_disabled)
 3. Azure Blob Storage container `interaction-logs` (Clickstream FaaS logs: view/click/add_to_cart/rating)
 """
 
@@ -36,8 +36,8 @@ class ETLExtractor:
         self.db_engine = create_engine(self.config.get_postgres_uri())
 
     def extract_products_from_db(self) -> pd.DataFrame:
-        """Trích xuất danh mục sản phẩm và thống kê đánh giá thực tế từ PostgreSQL."""
-        logger.info("[ETL 1/3] Đang tải danh mục sản phẩm từ PostgreSQL...")
+        """Trích xuất danh mục sản phẩm đang hoạt động (is_active = TRUE) và thống kê đánh giá từ PostgreSQL."""
+        logger.info("[ETL 1/3] Đang tải danh mục sản phẩm đang mở bán từ PostgreSQL...")
         query = """
             SELECT 
                 p.id AS product_id,
@@ -58,11 +58,12 @@ class ETLExtractor:
                 FROM reviews
                 GROUP BY product_id
             ) r ON p.id = r.product_id
+            WHERE COALESCE(p.is_active, TRUE) = TRUE
         """
         try:
             df_products = pd.read_sql(query, con=self.db_engine)
             if df_products.empty:
-                raise ValueError("Bảng 'products' trong PostgreSQL đang rỗng.")
+                raise ValueError("Bảng 'products' (is_active = TRUE) trong PostgreSQL đang rỗng.")
 
             df_products["content_raw"] = (
                 df_products["name"].fillna("") + " " +
@@ -70,13 +71,15 @@ class ETLExtractor:
                 df_products["description"].fillna("")
             ).str.strip()
 
-            logger.info(f"   -> Đã trích xuất {len(df_products)} sản phẩm từ database.")
+            logger.info(f"   -> Đã trích xuất {len(df_products)} sản phẩm đang hoạt động từ database.")
             return df_products
         except Exception as e:
             logger.warning(f"Không thể đọc trực tiếp từ PostgreSQL ({e}). Thử fallback từ local Parquet...")
-            for fallback_path in [self.config.PROCESSED_PRODUCTS_PARQUET, self.config.HF_PRODUCTS_PARQUET]:
+            for fallback_path in [self.config.PROCESSED_PRODUCTS_PARQUET]:
                 if fallback_path.exists():
                     df_fb = pd.read_parquet(fallback_path)
+                    if "is_active" in df_fb.columns:
+                        df_fb = df_fb[df_fb["is_active"].fillna(True)].copy()
                     if "content_raw" not in df_fb.columns:
                         df_fb["content_raw"] = (
                             df_fb["name"].fillna("") + " " +
@@ -86,11 +89,14 @@ class ETLExtractor:
             raise e
 
     def extract_interactions(self, valid_product_ids: set) -> pd.DataFrame:
-        """Hợp nhất tương tác từ PostgreSQL (reviews + orders) và Azure Blob Storage logs."""
+        """
+        Hợp nhất tương tác từ PostgreSQL (reviews + orders) và Azure Blob Storage logs.
+        Giữ nguyên lịch sử hành vi của cả các tài khoản đã bị Soft-Disable (is_disabled = TRUE).
+        """
         logger.info("[ETL 2/3] Đang tổng hợp dữ liệu tương tác từ Database và Blob Storage...")
         interactions = []
 
-        # 1. Đọc đánh giá sao từ bảng `reviews`
+        # 1. Đọc đánh giá sao từ bảng `reviews` (bao gồm cả user đã is_disabled)
         try:
             review_query = """
                 SELECT 
@@ -107,7 +113,7 @@ class ETLExtractor:
         except Exception as exc:
             logger.info(f"   -> Bỏ qua bảng 'reviews' ({exc}).")
 
-        # 2. Đọc lịch sử mua hàng đã xác nhận từ `orders` + `order_items` (Implicit = 5.0)
+        # 2. Đọc lịch sử mua hàng hợp lệ từ `orders` + `order_items` (bao gồm cả user đã is_disabled)
         try:
             order_query = """
                 SELECT 
@@ -132,21 +138,13 @@ class ETLExtractor:
             interactions.append(blob_interactions)
             logger.info(f"   -> Đã lấy {len(blob_interactions)} sự kiện log từ Blob Storage.")
 
-        # 4. Nạp thêm dữ liệu seed lịch sử từ Hugging Face Parquet nếu có (tránh cold-start toàn hệ thống)
-        for seed_path in [self.config.PROCESSED_INTERACTIONS_PARQUET, self.config.HF_INTERACTIONS_PARQUET]:
-            if seed_path.exists():
-                df_seed = pd.read_parquet(seed_path)
-                if not df_seed.empty:
-                    interactions.append(df_seed[["user_id", "product_id", "rating", "timestamp"]])
-                    logger.info(f"   -> Đã nạp thêm {len(df_seed)} tương tác lịch sử từ {seed_path.name}.")
-                    break
-
         if not interactions:
-            raise FileNotFoundError("Không tìm thấy bất kỳ nguồn dữ liệu tương tác nào.")
+            logger.warning("   -> Chưa có dữ liệu tương tác thực tế nào từ DB hoặc Blob Storage.")
+            return pd.DataFrame(columns=["user_id", "product_id", "rating", "timestamp"])
 
         df_all = pd.concat(interactions, ignore_index=True)
 
-        # Lọc sản phẩm hợp lệ và gộp trùng theo cặp (user_id, product_id) lấy mức tương tác cao nhất & mới nhất
+        # Chỉ gợi ý các sản phẩm đang hoạt động (is_active = TRUE)
         df_clean = df_all[df_all["product_id"].isin(valid_product_ids)].copy()
         df_clean["user_id"] = df_clean["user_id"].astype(str)
         df_clean["product_id"] = df_clean["product_id"].astype(str)
@@ -233,7 +231,7 @@ class ETLExtractor:
         df_products.to_parquet(self.config.PROCESSED_PRODUCTS_PARQUET, index=False)
         df_interactions.to_parquet(self.config.PROCESSED_INTERACTIONS_PARQUET, index=False)
 
-        logger.info(f"Hoàn tất: {len(df_products)} sản phẩm, {len(df_interactions)} tương tác sẵn sàng.")
+        logger.info(f"Hoàn tất: {len(df_products)} sản phẩm hoạt động, {len(df_interactions)} tương tác sẵn sàng.")
         return df_products, df_interactions
 
 

@@ -84,6 +84,9 @@ class Config:
     # Ngưỡng lọc giảm độ thưa ma trận (Rubric 3.2)
     MIN_USER_INTERACTIONS: int = int(os.getenv("MIN_USER_INTERACTIONS", "3"))
     MIN_ITEM_INTERACTIONS: int = int(os.getenv("MIN_ITEM_INTERACTIONS", "2"))
+    # Chính sách kích hoạt Retrain định kỳ & ngưỡng dữ liệu tối thiểu
+    MIN_INTERACTIONS_TO_TRAIN: int = int(os.getenv("MIN_INTERACTIONS_TO_TRAIN", "100"))
+    RETRAIN_COOLDOWN_SECONDS: int = int(os.getenv("RETRAIN_COOLDOWN_SECONDS", str(7 * 24 * 3600)))  # 604800s = 1 tuần
 
     @classmethod
     def ensure_directories(cls):

@@ -1,11 +1,9 @@
-cat << 'EOF' > .dockerignore
 .venv
 .git
+.env
 __pycache__
 *.pyc
 data/
 notebooks/
 exports/
-EOF
-
-docker compose up -d --build recommender-service
+frontend/node_modules/

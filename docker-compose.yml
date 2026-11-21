@@ -46,6 +46,12 @@ services:
       - "8081:8081"
     volumes:
       - cosmos_data:/tmp/cosmos/appdata
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:8081/ || bash -c 'exec 3<>/dev/tcp/127.0.0.1/8081' || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     networks:
       - ecommerce_net
 
@@ -86,6 +92,9 @@ services:
       POSTGRES_SSL_MODE: disable
       AUTH_SERVICE_URL: http://auth-service:8001
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-ecommerce-recommender-super-secret-jwt-key-2026}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-dev-payment-webhook-secret-2026}
+      PAYMENT_EXPIRE_MINUTES: ${PAYMENT_EXPIRE_MINUTES:-15}
+      ALLOW_DEV_X_USER_ID: ${ALLOW_DEV_X_USER_ID:-true}
     ports:
       - "8002:8002"
     depends_on:
@@ -93,6 +102,49 @@ services:
         condition: service_healthy
       auth-service:
         condition: service_started
+    networks:
+      - ecommerce_net
+
+  system-data-init:
+    build:
+      context: .
+      dockerfile: services/recommender_service/Dockerfile
+    container_name: ecommerce_system_data_init
+    restart: "no"
+    command: [ "python", "/app/scripts/init_system_data.py" ]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce_shop_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-YourSecurePasswordHere123!}
+      POSTGRES_SSL_MODE: disable
+      AUTH_SERVICE_URL: http://auth-service:8001
+      COSMOS_DB_ENDPOINT: http://cosmos-emulator:8081/
+      COSMOS_DB_PRIMARY_KEY: ${COSMOS_DB_PRIMARY_KEY:-C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==}
+      COSMOS_DB_DATABASE_NAME: ${COSMOS_DB_DATABASE_NAME:-ecommerce_recommender_db}
+      COSMOS_CONTAINER_USER_RECS: ${COSMOS_CONTAINER_USER_RECS:-user_recommendations}
+      COSMOS_CONTAINER_ITEM_RECS: ${COSMOS_CONTAINER_ITEM_RECS:-item_recommendations}
+      COSMOS_CONTAINER_METADATA: ${COSMOS_CONTAINER_METADATA:-system_metadata}
+      COSMOS_SSL_VERIFY: "false"
+      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+      BLOB_CONTAINER_INTERACTION_LOGS: interaction-logs
+      HF_DATASET_REPO: ${HF_DATASET_REPO:-cuongduongok/amazon-musical-instruments-clean}
+      HF_MODEL_REPO: ${HF_MODEL_REPO:-cuongduongok/amazon-musical-recommender-models}
+      MODEL_VERSION: ${MODEL_VERSION:-v1.0-svd}
+      COSMOS_SEED_MAX_ITEMS: ${COSMOS_SEED_MAX_ITEMS:-500}
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+      azurite:
+        condition: service_started
+      cosmos-emulator:
+        condition: service_healthy
     networks:
       - ecommerce_net
 
@@ -104,16 +156,28 @@ services:
     restart: on-failure
     environment:
       DEPLOYMENT_SLOT: blue
-      MODEL_VERSION: v1.0-svd
+      MODEL_VERSION: ${MODEL_VERSION:-v1.0-svd}
+      AUTH_SERVICE_URL: http://auth-service:8001
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-ecommerce-recommender-super-secret-jwt-key-2026}
       COSMOS_DB_ENDPOINT: http://cosmos-emulator:8081/
       COSMOS_DB_PRIMARY_KEY: ${COSMOS_DB_PRIMARY_KEY:-C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==}
       COSMOS_DB_DATABASE_NAME: ${COSMOS_DB_DATABASE_NAME:-ecommerce_recommender_db}
+      COSMOS_CONTAINER_USER_RECS: ${COSMOS_CONTAINER_USER_RECS:-user_recommendations}
+      COSMOS_CONTAINER_ITEM_RECS: ${COSMOS_CONTAINER_ITEM_RECS:-item_recommendations}
+      COSMOS_CONTAINER_METADATA: ${COSMOS_CONTAINER_METADATA:-system_metadata}
+      COSMOS_SSL_VERIFY: "false"
       AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
     ports:
       - "8003:8003"
     depends_on:
-      - azurite
-      - cosmos-emulator
+      azurite:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      cosmos-emulator:
+        condition: service_healthy
+      system-data-init:
+        condition: service_completed_successfully
     networks:
       - ecommerce_net
 
@@ -129,7 +193,8 @@ services:
     ports:
       - "7071:7071"
     depends_on:
-      - azurite
+      azurite:
+        condition: service_started
     networks:
       - ecommerce_net
 
