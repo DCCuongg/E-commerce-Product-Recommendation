@@ -1,0 +1,9 @@
+.venv
+.git
+.env
+__pycache__
+*.pyc
+data/
+notebooks/
+exports/
+frontend/node_modules/

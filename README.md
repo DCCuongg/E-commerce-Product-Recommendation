@@ -1,5 +1,8 @@
+
 # E-commerce-Product-Recommendation
-Đồ án môn
+
+Đồ án môn học: **Điện toán đám mây (IS402)**
+
 ## 👨‍🏫 Giảng viên hướng dẫn
 - **Giảng viên:** Thầy Hà Lê Hoài Trung
 - **GitHub:** [@TrungHa-DL](https://github.com/TrungHa-DL)
@@ -13,32 +16,35 @@
 | 1 | Dương Chí Cường | 23520195 | [@DCCuongg](https://github.com/DCCuongg) | Thành viên |
 | 2 | Cao Nguyễn Kỳ Dỵ | 23520403 | [@DWY4X](https://github.com/DWY4X) | Thành viên |
 | 3 | Huỳnh Quang Minh Quân | 23521253 | [@QuanHuynh1005](https://github.com/QuanHuynh1005) | Thành viên |
-| 4 | Đặng Nguyễn Hoàng Thạch | 23521411 | [@EvogasBaron](https://github.com/EvogasBaron) | Thành viên |\
+| 4 | Đặng Nguyễn Hoàng Thạch | 23521411 | [@EvogasBaron](https://github.com/EvogasBaron) | Thành viên |
 
+---
 
 ## Kiến trúc tổng thể hệ thống
 
-Hệ thống được thiết kế theo mô hình Microservices và kiến trúc Lambda/Cloud-Native phục vụ hệ thống gợi ý thương mại điện tử:
+Hệ thống được thiết kế theo mô hình **Microservices** kết hợp **kiến trúc Lambda / Cloud-Native** phục vụ bài toán gợi ý sản phẩm thương mại điện tử:
 
-```
+```text
 [ Client Browser (React + Vite) ]
           │
-          ├──> [ Ingress Controller / Azure API Management ]
+          ├──> [ NGINX Ingress Controller (AKS) ]
           │         │
-          │         ├──> [ Auth Service (FastAPI) - Port 8001 ] ──> [ Database: Postgres/Cosmos ]
-          │         ├──> [ Order/Cart Service (FastAPI) - Port 8002 ] ──> [ Database: Postgres/Cosmos ]
-          │         └──> [ Recommender API (FastAPI) - Port 8003 ] ──> [ Cosmos DB (Precomputed Top-K / Features) ]
-          │
-          └──> [ Event Collector (Azure Function - FaaS) ]
-                    │ (Lưu trữ bất đồng bộ log rating/click)
-                    ▼
-          [ Azure Blob Storage (Raw Data Lake) ]
-                    │
-                    ▼ (ETL & Huấn luyện: DSVM / Local Training Script)
-          [ Data Science Machine / PySpark Pipeline ]
-                    │
-                    ▼ (Export Model & Predictions)
-          [ Azure Cosmos DB (NoSQL Document Store) ]
+          │         ├──> [ Auth Service (FastAPI) - Port 8001 ] ──────────┐
+          │         ├──> [ Order/Cart Service (FastAPI) - Port 8002 ] ────┼──> [ Azure PostgreSQL (ACID / FOR UPDATE) ]
+          │         └──> [ Recommender API (FastAPI) - Port 8003 ] ───────┼──> [ Azure Cosmos DB (Precomputed Top-K) ]
+          │                   (Blue v1.0-svd / Green v2.0-svd)            │
+          │                                                               │
+          └──> [ Event Collector (Azure Function - FaaS, Port 7071) ]     │
+                    │ (Ghi log hành vi click/view/cart bất đồng bộ)       │
+                    ▼                                                     │
+          [ Azure Blob Storage (Data Lake, Product Images & Models) ]     │
+                    │                                                     │
+                    └──────────────────────────┬──────────────────────────┘
+                                               ▼ (Batch ETL & Retraining - Weekly / >100 Logs)
+                                 [ ML Pipeline (TF-IDF + TruncatedSVD) ]
+                                               │
+                                               ├──> [ Blob: item_similarity.npz & svd_recommender.pkl ]
+                                               └──> [ Cosmos DB: user_recommendations & item_recommendations ]
 
 ```
 
@@ -46,103 +52,105 @@ Hệ thống được thiết kế theo mô hình Microservices và kiến trúc
 
 ## Cấu hình hạ tầng trên gói Azure for Students
 
-Gói Azure for Students cung cấp **100 USD credit** kèm một số dịch vụ miễn phí 12 tháng. Để tránh cạn kiệt tài nguyên và credit trong thời gian làm bài, cấu hình hệ thống được chuẩn hóa như sau:
+Gói Azure for Students cung cấp **100 USD credit** kèm các dịch vụ miễn phí 12 tháng. Cấu hình hệ thống được tối ưu ngân sách như sau:
 
 | Thành phần | Dịch vụ đề xuất | Cấu hình tối ưu ngân sách | Chính sách chi phí & Hạn mức Free |
 | --- | --- | --- | --- |
-| **Database NoSQL** | Azure Cosmos DB | API for NoSQL, Serverless hoặc Provisioned Throughput 1000 RU/s | **Bật chế độ Free Tier Discount** (miễn phí 1000 RU/s và 25 GB dung lượng trọn đời). |
-| **Database Relational (Auth/Cart)** | Azure Database for PostgreSQL (Flexible Server) hoặc SQLite | Burstable `Standard_B1ms` (1 vCPU, 2GB RAM, 32GB Storage) | Nằm trong gói miễn phí 12 tháng của Azure Student. Nếu hết quota, containerize PostgreSQL trên VM. |
-| **Object Storage** | Azure Blob Storage | Hot Tier, Locally Redundant Storage (LRS) | 5GB LRS Block Blob miễn phí 12 tháng. Lưu trữ dataset raw và checkpoints. |
-| **Microservices & Model Serving** | Azure Kubernetes Service (AKS) / Azure Container Instances (ACI) | 1 System Node Pool: `Standard_B2s` (2 vCPU, 4GB RAM, Linux) | AKS Master Node miễn phí quản lý; chỉ tính tiền Worker Node VM (~$0.04/h, tắt khi không demo). |
-| **FaaS (Hàm phi máy chủ)** | Azure Functions | Consumption Plan (Linux, Python 3.10/3.11) | Miễn phí 1,000,000 requests/tháng và 400,000 GB-s/tháng. |
-| **Training Pipeline** | Local Machine / Google Colab (T4 GPU) | Export model artifact lên Blob Storage | Không tốn credit Azure; giả lập đúng quy trình Data Science VM của Azure. |
+| **Database NoSQL** | Azure Cosmos DB | API for NoSQL, Provisioned Throughput 400–1000 RU/s | **Bật chế độ Free Tier Discount** (miễn phí 1000 RU/s và 25 GB dung lượng trọn đời). |
+| **Database Relational (Auth/Cart)** | Azure Database for PostgreSQL (Flexible Server) | Burstable `Standard_B1ms` (1 vCPU, 2GB RAM, 32GB Storage) | Nằm trong gói miễn phí 12 tháng của Azure Student. |
+| **Object Storage & Public CDN** | Azure Blob Storage | Hot Tier, Locally Redundant Storage (LRS), Public Container `product-images` | 5GB LRS Block Blob miễn phí 12 tháng. Lưu dataset, interaction logs, model artifacts và 4.522 ảnh sản phẩm đa độ phân giải (`hi_res`, `large_0..2`, `thumb`). |
+| **Microservices & Model Serving** | Azure Kubernetes Service (AKS) | 1 System Node Pool: `Standard_B2s` (2 vCPU, 4GB RAM, Linux) | Master Node miễn phí; giới hạn RAM từng Pod (`384Mi–512Mi`) chống OOM; tự động scale slot Blue/Green không hoạt động về 0 replica. |
+| **FaaS (Hàm phi máy chủ)** | Azure Functions | Consumption Plan (Linux, Python 3.11) | Miễn phí 1,000,000 requests/tháng và 400,000 GB-s/tháng. |
+| **Training & Image ETL Pipeline** | Local Machine / Google Colab (T4 GPU) | Export model artifacts lên Blob/Cosmos DB & ảnh đa độ phân giải lên Public Blob/HF | Không tốn credit Azure; giả lập đúng luồng Data Science VM. |
 
 ---
 
 ## Kiến trúc thư mục dự án (Monorepo)
 
 ```bash
-ecommerce-recommender-azure/
+E-commerce-Product-Recommendation/
 ├── .github/
-│   └── workflows/
-│       ├── deploy-frontend.yml
-│       └── deploy-k8s.yml
-├── data/
-│   ├── raw/                       # Chứa sample tập Amazon Reviews 2023
-│   │   ├── meta_sample.jsonl
-│   │   └── review_sample.jsonl
-│   └── processed/                 # Dữ liệu sau ETL sẵn sàng huấn luyện
-├── notebooks/
-│   └── 01_ecommerce_recommender_pipeline.ipynb # Jupyter Notebook (EDA, Train, Eval trên Colab)
-├── ml_pipeline/                   # Module ETL và Huấn luyện mô hình
-│   ├── __init__.py                # Khởi tạo package
-│   ├── config.py                  # Nạp biến môi trường (.env), quản trị kết nối PostgreSQL, Blob & Cosmos DB Connection Strings
-│   ├── etl_extractor.py           # Trích xuất dữ liệu từ PostgreSQL & Blob Storage (không dùng Hugging Face) sạch dữ liệu Amazon
-│   ├── pipeline_runner.py         # Điểm kích hoạt toàn bộ luồng tự động (cho CronJob / Airflow / Docker)
-│   ├── train_recommender.py       # Huấn luyện Hybrid Similarity & SVD, tự động đẩy artifact lên Azure Blob SVD / Item-to-Item
-│   └── export_to_cosmos.py        # Tính toán Top-K và upsert trực tiếp vào 3 Containers của Cosmos DB
-├── services/
-│   ├── auth_service/              # Microservice 1: Quản lý người dùng & phân quyền
-│   │   ├── Dockerfile
-│   │   ├── requirements.txt
-│   │   ├── main.py
-│   │   ├── models.py
-│   │   └── auth_handler.py
-│   ├── order_service/             # Microservice 2: Giỏ hàng, Đặt hàng & Khóa tồn kho
-│   │   ├── Dockerfile
-│   │   ├── requirements.txt
-│   │   ├── main.py
-│   │   ├── models.py
-│   │   └── inventory_lock.py
-│   └── recommender_service/       # Model Serving API (AKS Deployment)
-│       ├── Dockerfile
-│       ├── requirements.txt
-│       ├── main.py                # Endpoint: GET /api/v1/recommendations/{user_id}
-│       └── cosmos_client.py
-├── azure_functions/               # FaaS: Thu thập log tương tác người dùng
+│   └── workflows/                                  # Quy trình tự động hóa CI/CD trên GitHub Actions
+│       ├── deploy-frontend.yml                     # CI kiểm tra build React/Vite & CD đóng gói Docker Frontend thủ công
+│       └── deploy-k8s.yml                          # CI test Python/Docker & CD triển khai Blue/Green lên Azure AKS thủ công (auto scale-down slot cũ)
+├── azure_functions/                                # Tầng FaaS (Serverless) thu thập sự kiện tương tác người dùng
 │   ├── LogInteractionFunction/
-│   │   ├── __init__.py
-│   │   └── function.json
-│   ├── host.json
-│   └── local.settings.json
-├── frontend/                      # Giao diện Web Client
-│   ├── public/
-│   ├── src/
-│   │   ├── assets/
-│   │   ├── components/            # Header, ProductCard, CartDrawer, Carousel
-│   │   ├── pages/
-│   │   │   ├── HomePage.tsx       # Trang 1: Trang chủ & Top gợi ý
-│   │   │   ├── ProductDetail.tsx  # Trang 2: Chi tiết & "Thường mua cùng"
-│   │   │   ├── AddToCartModal.tsx # Trang 3: Thao tác thêm vào giỏ
-│   │   │   └── CartPage.tsx       # Trang 4: Danh sách giỏ hàng & Checkout
-│   │   ├── services/              # Axios API calls
-│   │   ├── store/                 # Zustand store (Cart & Session)
-│   │   ├── App.tsx
-│   │   └── main.tsx
-│   ├── Dockerfile
-│   ├── nginx.conf
-│   ├── package.json
-│   ├── tailwind.config.js
-│   └── vite.config.ts
-├── k8s/                           # Tệp cấu hình triển khai Kubernetes (Blue/Green)
-│   ├── namespace.yaml
-│   ├── configmap-secrets.yaml
-│   ├── auth-service-deploy.yaml
-│   ├── order-service-deploy.yaml
-│   ├── recommender-blue.yaml      # Deployment Blue (Phiên bản v1)
-│   ├── recommender-green.yaml     # Deployment Green (Phiên bản v2)
-│   ├── recommender-service.yaml   # Service định tuyến traffic Blue/Green
-│   └── ingress.yaml
-├── scripts/
-│   ├── init_azure_storage.py             # Khởi tạo Azure Cosmos DB & Blob Containers
-│   ├── latency_benchmark.py              # Kịch bản đo độ trễ Network & Storage
-│   └── sql/                              # 📌 [BỔ SUNG] QUẢN LÝ CSDL POSTGRESQL
-│       ├── 01_init_auth_db.sql           # Tạo Schema, Bảng Users, Roles & Ràng buộc
-│       ├── 02_init_order_db.sql          # Tạo Schema, Bảng Orders, OrderItems & Ràng buộc
-│       └── 03_seed_data.sql              # Nạp dữ liệu mẫu (Users, Products, Orders) để Debug API
-├── docker-compose.yml             # Môi trường chạy kiểm thử cục bộ
-├── .env.example                          # [File] Mẫu cấu hình biến môi trường (Azure key, DB_URL)
-└── README.md
+│   │   ├── __init__.py                             # Handler HTTP Trigger nhận log view/click/add_to_cart/checkout/purchase/rating đẩy Append Blob
+│   │   └── function.json                           # Khai báo binding HTTP Trigger (route, methods, authLevel) cho Azure Functions
+│   ├── Dockerfile                                  # Đóng gói Multi-stage FaaS chạy độc lập qua Uvicorn (Port 7071)
+│   ├── host.json                                   # Cấu hình runtime toàn cục cho Azure Functions Host v4
+│   ├── local.settings.json                         # Cấu hình biến môi trường cục bộ cho Azure Functions Core Tools (gitignored)
+│   └── requirements.txt                            # Thư viện Python riêng của FaaS (azure-functions, azure-storage-blob, fastapi)
+├── data/                                           # Thư mục lưu dữ liệu cục bộ (parquets đã ETL từ Hugging Face / Postgres)
+├── frontend/                                       # [Bước 3 - Đang hoàn thiện] Giao diện Web SPA (React + Vite + Tailwind)
+├── k8s/                                            # Bộ Manifest triển khai cụm Kubernetes trên Azure AKS (Namespace: ecommerce-rec)
+│   ├── namespace.yaml                              # Khởi tạo không gian tên cô lập 'ecommerce-rec' cho toàn bộ dự án
+│   ├── configmap-secrets.yaml                      # Quản lý biến môi trường cấu hình (ConfigMap) & chuỗi kết nối mật (Secret)
+│   ├── auth-service-deploy.yaml                    # Deployment & ClusterIP Service cho Auth Service (Port 8001, giới hạn RAM)
+│   ├── order-service-deploy.yaml                   # Deployment & ClusterIP Service cho Order Service (Port 8002, giới hạn RAM)
+│   ├── recommender-blue.yaml                       # Deployment slot Blue (MODEL_VERSION=v1.0-svd, replicas: 1) phục vụ traffic chính
+│   ├── recommender-green.yaml                      # Deployment slot Green (MODEL_VERSION=v2.0-svd, replicas: 0 mặc định tiết kiệm RAM)
+│   ├── recommender-service.yaml                    # Router Service điều hướng traffic giữa Blue và Green qua label selector
+│   └── ingress.yaml                                # NGINX Ingress định tuyến API (/auth, /admin, /payments, /recommendations, /products, /cart, /orders)
+├── ml_pipeline/                                    # Luồng xử lý dữ liệu & huấn luyện mô hình gợi ý (Batch / Lambda Layer)
+│   ├── __init__.py                                 # Khởi tạo Python package ml_pipeline
+│   ├── config.py                                   # Nạp .env, quản lý URI PostgreSQL, Blob, Cosmos DB, ngưỡng train (>100 logs) & cooldown 7 ngày
+│   ├── etl_extractor.py                            # Trích xuất sản phẩm hoạt động (is_active=TRUE) & hợp nhất reviews, orders + Blob logs
+│   ├── train_recommender.py                        # Huấn luyện Item-to-Item Cosine Similarity & TruncatedSVD theo chu kỳ/ngưỡng, sync lên Blob
+│   ├── export_to_cosmos.py                         # Tiền tính toán Top-10 User Recs, Top-5 Bundles, Trending & upsert Cosmos DB (kèm retry 429)
+│   └── pipeline_runner.py                          # Entrypoint điều phối tự động 3 bước: ETL -> Train -> Export Cosmos DB (hỗ trợ --force)
+├── models/                                         # Lưu trữ trọng số mô hình đã huấn luyện để đóng gói vào Recommender Image
+│   ├── item_similarity.npz                         # Ma trận nén tương đồng sản phẩm Hybrid (TF-IDF + Co-occurrence)
+│   └── svd_recommender.pkl                         # Trọng số phân rã ma trận TruncatedSVD (sinh qua sync_models / pipeline_runner)
+├── notebooks/                                      # Môi trường thử nghiệm & huấn luyện trên Google Colab / Jupyter
+│   ├── 01_ecommerce_recommender_pipeline.ipynb     # Notebook EDA dữ liệu Amazon Reviews 2023, đánh giá & huấn luyện model
+│   ├── 01_ecommerce_recommender_pipeline.py        # Bản xuất script Python tương ứng từ Notebook 01 để dễ diff trên Git
+│   ├── 02_update_product_images_etl.ipynb          # Notebook ETL kiểm tra link sống, tải & upload 4.522 ảnh đa độ phân giải lên Azure Public Blob
+│   └── 02_update_product_images_etl.py             # Bản xuất script Python tương ứng từ Notebook 02 để dễ diff trên Git
+├── scripts/                                        # Bộ công cụ tự động hóa khởi tạo, kiểm thử & đo kiểm hiệu năng
+│   ├── sql/                                        # Các script SQL khởi tạo lược đồ và dữ liệu mẫu PostgreSQL
+│   │   ├── 01_init_auth_db.sql                     # Tạo bảng 'users' (hỗ trợ is_disabled) và Partial Index xác thực/RBAC
+│   │   ├── 02_init_order_db.sql                    # Tạo 'products' (hi_res_url, large_urls, thumb_url), 'cart_items', 'orders', 'order_items', 'payment_transactions', 'reviews' & tối ưu Index
+│   │   ├── 03_seed_auth.sql                        # Nạp tài khoản mẫu (customer/admin) phục vụ đăng nhập & demo
+│   │   └── seed_products.sql                       # Nạp danh mục 1.000 sản phẩm nhạc cụ kèm ảnh đa độ phân giải & tồn kho ban đầu
+│   ├── init_local_dev.py                           # Đồng bộ dataset từ Hugging Face, khởi tạo Azurite, Cosmos Emulator & Postgres
+│   ├── latency_benchmark.py                        # Kịch bản bắn 100 requests đo P50/P90/P99 Network Latency & Storage Latency
+│   ├── run_backend_services.py                     # Khởi chạy đồng thời 3 Microservices (8001-8003) & FaaS (7071) ở local
+│   ├── sync_models_to_dev.py                       # Tải model artifacts (svd_recommender.pkl, item_similarity.npz) về thư mục models/
+│   ├── test_backend_apis.py                        # Kiểm thử tự động luồng API: Auth, RBAC, Cart, Checkout khóa tồn kho, Thanh toán & Recommender
+│   └── verify_dev_env.py                           # Kiểm tra trạng thái kết nối tới PostgreSQL, Azurite và Cosmos DB Emulator
+├── services/                                       # Kiến trúc 3 Backend Microservices độc lập (FastAPI)
+│   ├── auth_service/                               # Microservice 1: Quản lý tài khoản, JWT, Soft-Disable & phân quyền RBAC (Port 8001)
+│   │   ├── __init__.py                             # Khởi tạo package auth_service
+│   │   ├── auth_handler.py                         # Xử lý mã hóa mật khẩu (bcrypt), ký/giải mã JWT & kiểm tra is_disabled/RBAC
+│   │   ├── Dockerfile                              # Đóng gói Multi-stage image nhẹ cho Auth Service (Port 8001)
+│   │   ├── main.py                                 # REST API (/register, /login, /verify-token, /me) & Admin Users (/api/v1/admin/users)
+│   │   ├── models.py                               # ORM SQLAlchemy bảng 'users' & Pydantic schemas request/response
+│   │   └── requirements.txt                        # Thư viện riêng của Auth Service (fastapi, sqlalchemy, pyjwt, bcrypt)
+│   ├── order_service/                              # Microservice 2: Danh mục, Giỏ hàng, Đặt hàng, Thanh toán Online & Admin (Port 8002)
+│   │   ├── __init__.py                             # Khởi tạo package order_service
+│   │   ├── Dockerfile                              # Đóng gói Multi-stage image nhẹ cho Order Service (Port 8002)
+│   │   ├── inventory_lock.py                       # Xử lý giao dịch Checkout với Pessimistic Lock (SELECT ... FOR UPDATE) & hoàn kho khi hủy
+│   │   ├── payment_handler.py                      # Sinh mã thanh toán duy nhất theo đơn, tạo VietQR, xác thực Webhook HMAC & hủy đơn quá hạn
+│   │   ├── main.py                                 # REST API sản phẩm (ảnh đa độ phân giải), giỏ hàng, đặt hàng, thanh toán & quản trị Admin (/api/v1/admin/*)
+│   │   ├── models.py                               # ORM SQLAlchemy (Product, CartItem, Order, OrderItem, PaymentTransaction, Review) & schemas
+│   │   └── requirements.txt                        # Thư viện riêng của Order Service (fastapi, httpx, sqlalchemy, psycopg2)
+│   ├── recommender_service/                        # Microservice 3: Model Serving API độ trễ thấp (Port 8003 - Blue/Green)
+│   │   ├── __init__.py                             # Khởi tạo package recommender_service
+│   │   ├── cosmos_client.py                        # Truy vấn O(1) từ Cosmos DB kết hợp fallback SVD/Similarity trên RAM
+│   │   ├── Dockerfile                              # Đóng gói Multi-stage image kèm thư mục models/ phục vụ chạy trên AKS
+│   │   ├── main.py                                 # REST API gợi ý cá nhân hóa (/recommendations/{user_id}), mua kèm & reload model
+│   │   └── requirements.txt                        # Thư viện riêng của Recommender Service (azure-cosmos, numpy, scipy)
+│   └── BACKEND_API_HANDOFF.md                      # Tài liệu đặc tả hợp đồng API (API Contract) cho Frontend tích hợp
+├── .dockerignore                                   # Loại trừ .venv, .git, .env, data/, notebooks/, exports/ khi build Docker Image
+├── .env.example                                    # File mẫu khai báo toàn bộ biến môi trường (Azure Keys, Postgres, JWT, Payment)
+├── .gitignore                                      # Loại trừ file nhạy cảm (.env), môi trường ảo (.venv) & cache khỏi Git
+├── docker-compose.yml                              # Dựng toàn bộ stack local bằng 1 lệnh (Postgres, Azurite, Cosmos, Services)
+├── HANDOFF.md                                      # Hướng dẫn chi tiết quy trình bàn giao, vận hành ML Pipeline, Benchmark & AKS
+├── README.md                                       # Tài liệu tổng quan kiến trúc, cấu hình Azure Students & hướng dẫn cài đặt
+├── requirements.txt                                # Danh sách thư viện Python tổng hợp cho môi trường phát triển cục bộ
+├── RUN_BE_API.md                                   # Tài liệu hướng dẫn chạy Backend, Database & danh sách REST API bàn giao Frontend
+└── STEP1_CONTEXT.md                                # Tổng quan tập dữ liệu Amazon Reviews 2023 & đặc tả kỹ thuật Bước 1
 
 ```
 
@@ -153,316 +161,296 @@ ecommerce-recommender-azure/
 ### Tiêu chí 1: Giới thiệu bài toán (1.5 điểm)
 
 1. **Phân loại bài toán (0.25đ):**
-* *Thu thập (Data Ingestion):* Ghi nhận hành vi tương tác thực tế từ client (click, view, add-to-cart, star rating) thông qua Azure Function ghi log trực tiếp vào Azure Blob Storage.
-* *Lưu trữ (Storage):* Lưu trữ dữ liệu phi cấu trúc/bán cấu trúc (logs, JSONL raw) trên Azure Blob Storage; lưu trữ danh mục sản phẩm và bảng tra cứu kết quả gợi ý (Top-K Precomputed) trên Azure Cosmos DB; lưu trữ dữ liệu giao dịch trên PostgreSQL.
-* *Xử lý (Data Processing & Training):* Xử lý luồng ETL, lọc ma trận thưa (Sparse Matrix), huấn luyện mô hình Collaborative Filtering & Content-Based.
-* *Trực quan (Visualization/Serving):* Hiển thị danh mục sản phẩm và các dải đề xuất theo thời gian thực (Real-time Recommendation Shelf) trên Web Frontend.
 
+* *Thu thập (Data Ingestion):* Ghi nhận hành vi tương tác thực tế từ client (`view`, `click`, `add_to_cart`, `checkout`, `purchase`, `rating`) thông qua Azure Function ghi log bất đồng bộ vào Azure Blob Storage và thu thập đánh giá trực tiếp vào PostgreSQL.
+* *Lưu trữ (Storage):* Lưu trữ dữ liệu phi cấu trúc/bán cấu trúc (logs, JSONL raw, model artifacts) và kho ảnh sản phẩm tĩnh công khai (`product-images`) trên Azure Blob Storage; lưu trữ bảng tra cứu kết quả gợi ý tiền tính toán (Precomputed Top-K) trên Azure Cosmos DB; lưu trữ dữ liệu giao dịch ACID trên PostgreSQL.
+* *Xử lý (Data Processing & Training):* Xử lý luồng ETL hợp nhất PostgreSQL + Blob logs, lọc ma trận thưa (Sparse Matrix), huấn luyện mô hình Collaborative Filtering & Content-Based, đồng thời thực hiện pipeline kiểm tra sống và lưu trữ ảnh đa độ phân giải (`notebooks/02_update_product_images_etl.ipynb`).
+* *Trực quan (Visualization/Serving):* Hiển thị danh mục sản phẩm với ảnh đa độ phân giải (`thumb_url`, `large_urls`, `hi_res_url`), các dải đề xuất theo thời gian thực và trang quản trị hệ thống trên Web Frontend.
+* *Vai trò cầu nối dữ liệu của bảng `reviews`:* Bảng `reviews` trong PostgreSQL được chuẩn hóa DDL (`02_init_order_db.sql`) với ràng buộc `CHECK (rating >= 1.0 AND rating <= 5.0)`, đóng vai trò thu thập phản hồi đánh giá thực tế từ khách hàng sau mua để hợp nhất cùng `order_items` và clickstream logs trên Blob Storage khi tái huấn luyện mô hình định kỳ trong `ml_pipeline`.
 
 2. **Loại dữ liệu (0.25đ):**
-* *Web Data:* Tương tác người dùng dạng JSON payloads gửi từ giao diện SPA.
-* *Database:* Dữ liệu quan hệ (Người dùng, Đơn hàng, Tồn kho) và Dữ liệu Document NoSQL (Metadata sản phẩm, Vector đặc trưng).
-* *Data Analyst / Dataset:* Dữ liệu lịch sử mua sắm và đánh giá từ tập `Amazon-Reviews-2023`.
 
+* *Web Data:* Tương tác người dùng dạng JSON payloads gửi từ giao diện SPA.
+* *Database:* Dữ liệu quan hệ (Người dùng, Sản phẩm kèm JSONB mảng ảnh `large_urls`, Đơn hàng, Tồn kho, Thanh toán, Đánh giá) và Dữ liệu Document NoSQL (Precomputed User/Item Recommendations).
+* *Data Analyst / Dataset & Media:* Dữ liệu lịch sử mua sắm, đánh giá từ tập `Amazon-Reviews-2023` (`Musical_Instruments`) cùng 4.522 tệp ảnh JPEG đa kích thước được host trực tiếp trên Azure Blob Storage Public Container.
 
 3. **Kích thước dữ liệu và dung lượng bộ nhớ (>4GB) - So sánh Cloud vs On-premise (0.75đ):**
-* *Kích thước dữ liệu:* Tập dữ liệu gốc Amazon Reviews 2023 có kích thước vượt mức 4GB (hàng chục GB nếu tính toàn bộ danh mục). Khi đưa vào pipeline, dữ liệu thô dạng JSONL > 4.2 GB được xử lý phân tán theo batch.
+
+* *Kích thước dữ liệu:* Tập dữ liệu gốc Amazon Reviews 2023 có kích thước vượt mức 4GB (hàng chục GB toàn bộ danh mục). Khi đưa vào pipeline, dữ liệu thô dạng JSONL > 4.2 GB được xử lý phân tán theo batch và nén sang định dạng cột Parquet.
 * *So sánh hiệu năng xử lý:*
-
-
 
 | Tiêu chí | Máy chủ truyền thống (On-premise / Local PC) | Hệ thống Cloud (Azure Data Lake + Virtual VM/Databricks) |
 | --- | --- | --- |
 | **Tốc độ đọc/ghi (I/O)** | Phụ thuộc tốc độ SSD cục bộ (500MB/s - 2GB/s). Giới hạn bởi băng thông bus nội bộ. | Tốc độ truyền tải mở rộng tự động theo IOPS phân tán của Storage Account (hỗ trợ tới hàng chục Gbps). |
 | **Giới hạn bộ nhớ (RAM/Out-Of-Memory)** | Cố định (ví dụ 8GB - 16GB). Khi nạp tập dữ liệu >4GB để tính ma trận tương tác $U \times I$, nguy cơ tràn RAM (OOM) rất cao. | Dễ dàng scale-up cấu hình RAM (32GB - 128GB) hoặc scale-out theo cụm Spark (Databricks) phân tán bộ nhớ trên RAM nhiều worker node. |
-| **Thời gian huấn luyện mô hình** | Lâu (chạy tuần tự trên CPU), không tận dụng được GPU chuyên dụng nếu phần cứng không hỗ trợ. | Tăng tốc qua VM có GPU (NC-series) hoặc tối ưu hóa vectorization trên Spark cluster. |
+| **Thời gian huấn luyện mô hình** | Lâu (chạy tuần tự trên CPU), không tận dụng được GPU chuyên dụng nếu phần cứng không hỗ trợ. | Tăng tốc qua VM/Colab có GPU (T4/NC-series) hoặc tối ưu hóa vectorization trên Spark cluster. |
 
 4. **Phân loại thành phần Cloud (0.25đ):**
-* **IaaS (Infrastructure as a Service):** Azure Virtual Machines (dùng cho Data Science VM hoặc k3s/AKS worker node VM).
-* **PaaS (Platform as a Service):** Azure Cosmos DB, Azure Database for PostgreSQL, Azure App Service / AKS (Managed Kubernetes Control Plane).
-* **FaaS (Function as a Service):** Azure Functions (chạy tác vụ log interaction không máy chủ).
-* **SaaS (Software as a Service):** Power BI (nếu dùng làm báo cáo quản trị) hoặc Azure Monitor / Application Insights.
 
-
+* **IaaS (Infrastructure as a Service):** Azure Virtual Machines (Worker Node VM cho cụm AKS).
+* **PaaS (Platform as a Service):** Azure Cosmos DB, Azure Database for PostgreSQL Flexible Server, Azure Kubernetes Service (Managed Control Plane), Azure Blob Storage Public CDN (`product-images`).
+* **FaaS (Function as a Service):** Azure Functions (`LogInteractionFunction` chạy tác vụ ghi log không máy chủ).
+* **SaaS (Software as a Service):** GitHub Actions (CI/CD) & Azure Monitor / Application Insights.
 
 ---
 
 ### Tiêu chí 2: Cơ sở lý thuyết (1.5 điểm)
 
 1. **Cơ sở lý thuyết về định dạng lưu trữ (0.5đ):**
-* *Web - Visualize:* JSON (JavaScript Object Notation) - chuẩn dữ liệu nhẹ, tương thích trực tiếp với React State và REST API.
+
+* *Web - Visualize:* JSON (JavaScript Object Notation) - chuẩn dữ liệu nhẹ, tương thích trực tiếp với React State và FastAPI REST API.
 * *Database:*
-* PostgreSQL: Relational Tables (chuẩn hóa 3NF) đảm bảo tính toàn vẹn dữ liệu cho giao dịch thanh toán và tài khoản.
-* Azure Cosmos DB: BSON/JSON Document - mô hình Key-Value và Document Store với cấu trúc linh hoạt, hỗ trợ lưu mảng đối tượng danh sách sản phẩm gợi ý `top_recommendations: [{product_id, score}]`.
+* PostgreSQL: Relational Tables (chuẩn hóa 3NF) kết hợp kiểu `JSONB` (`large_urls`) đảm bảo tính toàn vẹn ACID cho giao dịch thanh toán, khóa tồn kho và lưu vết kiểm toán (`payment_transactions`, `reviews`).
+* Azure Cosmos DB: JSON Document Store với Partition Key `/id`, hỗ trợ truy vấn điểm $O(1)$ cho danh sách gợi ý `recommendations: [{product_id, score, rank}]`.
 
 
-* *Train Model:* Lưu trữ ma trận thưa dưới định dạng Scipy CSR Matrix (Compressed Sparse Row) để tiết kiệm 95% bộ nhớ; xuất mô hình dưới dạng `.pkl` (Pickle), `.onnx` hoặc ma trận trọng số nhúng (Embedding weights).
-* *Storage Cloud (Azure Blob):* Dạng Block Blob phân vùng theo thư mục logic `logs/year=2026/month=11/day=07/*.jsonl` và định dạng nén Parquet/Gzip giúp tối ưu hóa dung lượng lưu trữ và chi phí I/O.
-
+* *Train Model:* Lưu trữ ma trận thưa dưới định dạng Scipy CSR Matrix (Compressed Sparse Row) để tiết kiệm 95% bộ nhớ; xuất trọng số mô hình dưới dạng ma trận nén `.npz` (`item_similarity.npz`) và `.pkl` (`svd_recommender.pkl`).
+* *Storage Cloud (Azure Blob):* Dạng Append/Block Blob lưu trữ log dạng JSONL (`interaction-logs`), dữ liệu sạch dạng Parquet (`processed-data`), trọng số mô hình (`model-artifacts`) và kho ảnh sản phẩm công khai (`product-images` với `Cache-Control: public, max-age=31536000`).
 
 2. **Cơ sở lý thuyết về thuật toán xử lý & Luồng dữ liệu (0.5đ):**
-* *Thuật toán Gợi ý 1 - Item-to-Item Collaborative Filtering (Cosine Similarity trên TF-IDF & Metadata):*
-* Áp dụng cho trang chi tiết sản phẩm: "Khách hàng mua bút chì cũng thường mua gọt bút chì, sổ tay".
-* Sử dụng độ đo tương đồng Cosine giữa vector đặc tính của sản phẩm $i$ và $j$:
+
+* *Thuật toán Gợi ý 1 - Hybrid Item-to-Item Similarity (TF-IDF Content + Co-occurrence):*
+* Áp dụng cho khối "Sản phẩm thường được mua cùng" trên trang chi tiết sản phẩm.
+* Kết hợp độ tương đồng nội dung TF-IDF và độ tương đồng đồng xuất hiện hành vi theo hệ số trộn $\alpha = 0.7$ (tự động điều chỉnh $\alpha = 0.0$ sang thuần Content-Based nếu dữ liệu tương tác còn ít $\le 10$ bản ghi):
+
+
 
 $$\text{Cosine Similarity}(u, v) = \frac{\mathbf{u} \cdot \mathbf{v}}{\Vert{}\mathbf{u}\Vert{}_2 \Vert{}\mathbf{v}\Vert{}_2}$$
 
-
-
-
-* *Thuật toán Gợi ý 2 - Matrix Factorization (Truncated SVD / Implicit ALS):*
+* *Thuật toán Gợi ý 2 - Matrix Factorization (Truncated SVD):*
 * Phân rã ma trận tương tác User - Item $R_{m \times n}$ thành hai ma trận bậc thấp đại diện cho vector ẩn của người dùng $P_{m \times k}$ và sản phẩm $Q_{n \times k}$ sao cho:
+
+
 
 $$\hat{R} \approx P \times Q^T$$
 
-
-* Với người dùng mới (Cold-start): Fallback về Top sản phẩm có đánh giá trung bình cao nhất và số lượng đánh giá lớn nhất trong cùng danh mục.
-
-
+* Với người dùng mới (Cold-start): Tự động fallback về Top-10 sản phẩm thịnh hành nhất (`system_metadata/popular_items`).
 * *Luồng dữ liệu (Data Pipeline Flow):*
-`Client Browser` $\rightarrow$ Thao tác Click/Đánh giá $\rightarrow$ `Azure Function` $\rightarrow$ Ghi log Append vào `Blob Storage` $\rightarrow$ Định kỳ chạy `ETL Job` $\rightarrow$ Train mô hình $\rightarrow$ Lưu kết quả Top-K vào `Cosmos DB` $\rightarrow$ `Recommender Service` truy vấn theo $O(1)$ $\rightarrow$ `Frontend`.
-
+`Client Browser` $\rightarrow$ Thao tác View/Click/Cart/Đánh giá $\rightarrow$ `Azure Function` $\rightarrow$ Ghi Append Blob vào `Blob Storage` $\rightarrow$ Chạy `ml_pipeline` (hợp nhất PostgreSQL `reviews` + `orders` + Blob logs, lọc sản phẩm `is_active = TRUE`) $\rightarrow$ Kiểm tra ngưỡng (`> 100` tương tác) & chu kỳ (`7 ngày`) $\rightarrow$ Train mô hình $\rightarrow$ Lưu kết quả Top-K vào `Cosmos DB` (kèm cơ chế retry `429`) $\rightarrow$ `Recommender Service` truy vấn theo $O(1)$ $\rightarrow$ `Frontend`.
 
 3. **Chi tiết các dịch vụ Azure sử dụng (0.5đ):**
-* **Azure Blob Storage:** Chứa dữ liệu gốc (Amazon Reviews dataset) và log luồng tương tác thực tế từ web.
-* **Data Science VM / Local Python Runtime:** Cài đặt sẵn PySpark, Scikit-Learn, LightFM/Surprise để chạy pipeline xử lý dữ liệu lớn.
-* **Azure Cosmos DB:** Đóng vai trò Data Serving Layer lưu trữ `user_id -> list of recommended items` với độ trễ phản hồi < 10ms.
-* **Azure Kubernetes Service (AKS):** Nền tảng điều phối container chứa 3 microservices (Auth, Order, Recommender), hỗ trợ cân bằng tải và Auto-scaling.
+
+* **Azure Blob Storage:** Chứa dữ liệu gốc/đã xử lý, log luồng tương tác thực tế từ web (`interaction-logs`), file trọng số mô hình (`model-artifacts`) và 4.522 tệp ảnh sản phẩm công khai (`product-images`) chống đứt gãy liên kết CDN bên ngoài.
+* **Data Science VM / Local & Colab Runtime:** Cài đặt sẵn PySpark, Scikit-Learn, Scipy, `aiohttp` để chạy pipeline ETL, kiểm tra ảnh sống và huấn luyện mô hình.
+* **Azure Cosmos DB:** Đóng vai trò Data Serving Layer lưu trữ `user_recommendations`, `item_recommendations`, `system_metadata` với độ trễ phản hồi < 10ms.
+* **Azure Kubernetes Service (AKS):** Nền tảng điều phối container chứa 3 microservices (Auth, Order, Recommender), hỗ trợ Blue/Green Deployment và tự động scale slot không hoạt động về 0 replica.
 * **Azure Functions:** Hàm phi máy chủ tiếp nhận HTTP POST event từ web để giải phóng tải cho Backend chính.
-
-
 
 ---
 
 ### Tiêu chí 3: Mô hình dữ liệu & Tối ưu hiệu năng (2.0 điểm)
 
 1. **Tốc độ cho phép đọc ghi (0.5đ):**
-* *Azure Cosmos DB:* Cung cấp cam kết SLA đọc < 10ms và ghi < 10ms với phân vùng hợp lý (Partition Key: `/user_id` hoặc `/category`). Thông lượng cấu hình từ 400 đến 1000 RU/s (Request Units/giây) cho phép đáp ứng hàng trăm lượt đọc đồng thời.
-* *Azure Blob Storage:* Hỗ trợ thông lượng đọc tuần tự lên đến 60 MB/s trên mỗi blob, đáp ứng tốt cho tác vụ nạp dữ liệu huấn luyện hàng loạt.
 
+* *Azure Cosmos DB:* Cung cấp cam kết SLA đọc < 10ms và ghi < 10ms với phân vùng hợp lý (Partition Key: `/id`). Thông lượng cấu hình 400–1000 RU/s đáp ứng hàng trăm lượt đọc đồng thời; tích hợp cơ chế Exponential Backoff Retry khi gặp mã giới hạn thông lượng `HTTP 429` (`x-ms-retry-after-ms`).
+* *Azure Blob Storage:* Hỗ trợ thông lượng đọc tuần tự lên đến 60 MB/s trên mỗi blob, đáp ứng tốt cho tác vụ nạp dữ liệu huấn luyện hàng loạt và phục vụ tải ảnh tĩnh song song với `Cache-Control: public, max-age=31536000`.
 
 2. **Thiết lập luồng xử lý dữ liệu tự động ETL (0.5đ):**
-* *Bước 1 (Extract):* Web Client kích hoạt request đánh giá sản phẩm $\rightarrow$ Azure Function tiếp nhận và ghi nhận bản ghi vào Blob Storage theo định dạng:
-`{"user_id": "U101", "item_id": "B001", "action": "rating", "value": 5, "timestamp": 1731000000}`
-* *Bước 2 (Transform):* Script Python `etl_extractor.py` định kỳ kích hoạt:
+
+* *Bước 1 (Extract):* Web Client gửi sự kiện tương tác $\rightarrow$ Azure Function ghi bản ghi JSON vào Append Blob trên Blob Storage (`interaction-logs`) theo định dạng:
+`{"user_id": "U101", "product_id": "B001", "action": "click", "timestamp": 1731000000}`
+* *Bước 2 (Transform - `ml_pipeline/etl_extractor.py`):*
+* Lọc các sản phẩm đang hoạt động (`WHERE COALESCE(p.is_active, TRUE) = TRUE`) làm ứng viên gợi ý để không đề xuất sản phẩm đã ngừng kinh doanh.
+* Hợp nhất đánh giá sao từ bảng `reviews`, lịch sử mua từ `orders/order_items` (giữ nguyên cả lịch sử hành vi của các tài khoản đã `is_disabled = TRUE` để bảo toàn dữ liệu huấn luyện) và clickstream logs từ Blob Storage.
+* Quy đổi trọng số hành vi thống nhất giữa FaaS và ETL: `view = 1.0`, `click = 2.0`, `add_to_cart = 3.5`, `checkout = 4.5`, `purchase / rating = 5.0`; gộp trùng cặp `(user_id, product_id)` lấy mức tương tác cao nhất.
 * Lọc bỏ người dùng có dưới 3 lượt tương tác và sản phẩm có dưới 2 lượt tương tác để giải quyết độ thưa ma trận.
-* Chuẩn hóa điểm rating từ khoảng $[1, 5]$ và chuyển đổi hành vi xem trang thành implicit score: Click = 1, Add-to-cart = 3, Purchase/Review = 5.
 
 
-* *Bước 3 (Load):* Nạp dữ liệu vào mô hình tính toán, sau đó lưu kết quả Top-20 sản phẩm gợi ý cho mỗi người dùng vào Cosmos DB.
+* *Bước 3 (Train & Load - `ml_pipeline/train_recommender.py` & `export_to_cosmos.py`):*
+* Áp dụng chính sách bảo vệ tài nguyên: Chỉ tái huấn luyện định kỳ mỗi **7 ngày** (`RETRAIN_COOLDOWN_SECONDS=604800`) khi tổng số tương tác thực tế vượt ngưỡng tối thiểu **`> 100` bản ghi** (`MIN_INTERACTIONS_TO_TRAIN=100`, có thể bỏ qua kiểm tra bằng cờ `--force`).
+* Tính toán và upsert **Top-10** sản phẩm gợi ý cho từng người dùng, **Top-5** sản phẩm mua kèm và **Top-10** sản phẩm thịnh hành vào Cosmos DB.
+
 
 
 3. **Phương pháp đo độ trễ (Latency Delay) khi thiết lập Server ở các Region khác nhau (0.5đ):**
-* *Bản chất phép đo:* Cần thực hiện kiểm thử ở cả **2 cấp độ**:
-1. **Network Latency (Mạng giữa các Region):** Triển khai ứng dụng/API tại 2 Region khác nhau: `Southeast Asia` (Singapore - Region gần người dùng Việt Nam nhất) và `East US` (Mỹ). Sử dụng script đo đạc để ghi lại:
-* DNS Lookup Time.
-* TCP Handshake + TLS Connect Time.
-* TTFB (Time to First Byte): Thời gian từ lúc gửi byte request đầu tiên đến khi nhận byte response đầu tiên.
 
+* *Bản chất phép đo:* Thực hiện kiểm thử ở cả **2 cấp độ** qua `scripts/latency_benchmark.py`:
+1. **Network Latency (Mạng giữa các Region):** Triển khai API tại 2 Region `Southeast Asia` (Singapore) và `East US` (Mỹ), gửi 100 requests đồng thời để đo thời gian kết nối TCP/TLS và TTFB, tính toán các phân vị $P_{50}, P_{90}, P_{99}$ và thông lượng RPS.
+2. **Storage Latency (Truy xuất lưu trữ):** Đo trực tiếp độ trễ đọc điểm $O(1)$ trên Azure Cosmos DB và ghi/đọc trên Azure Blob Storage.
 
-2. **Storage Latency (Truy xuất lưu trữ nội vùng vs xuyên vùng):** Đo tốc độ đọc/ghi dữ liệu từ API đặt tại `Southeast Asia` kết nối đến Blob Storage/Cosmos DB đặt cùng tại `Southeast Asia` (Intra-region) so với Storage đặt tại `East US` (Cross-region).
-
-
-* *Kịch bản kiểm thử:* Sử dụng script `scripts/latency_benchmark.py` gửi đồng thời 100 requests lặp lại và tính toán các chỉ số: $P_{50}, P_{90}, P_{99}$ latency.
 
 
 4. **Giải pháp tối ưu hóa lưu trữ và tốc độ đọc ghi (0.5đ):**
-* **In-memory Caching (Redis / Client Caching):** Sử dụng Redis hoặc bộ nhớ đệm tại API Gateway để cache lại kết quả Top-K gợi ý của các sản phẩm phổ biến (TTL = 30 phút), giảm 80% lượt đọc vào Cosmos DB.
-* **Connection Pooling:** Duy trì pool kết nối TCP tái sử dụng tới Cosmos DB và Database thay vì tạo kết nối mới ở mỗi request.
-* **Partition Key Optimization:** Chọn Partition Key đồng đều (ví dụ `user_id` băm hoặc `category`) trong Cosmos DB để tránh "Hot Partition", phân bổ tải đều trên các phân vùng vật lý.
-* **Data Compression:** Nén payload JSON trả về từ server bằng Gzip/Brotli; định dạng ảnh thumbnail sản phẩm chuyển đổi sang định dạng WebP thế hệ mới.
 
-
+* **Multi-Resolution Image Hosting (`product-images`):** Tách biệt 3 cấp độ ảnh (`thumb_url` cho danh sách/card nhỏ, tối đa 3 `large_urls` cho gallery chi tiết, `hi_res_url` cho chế độ phóng to) và lưu trữ trực tiếp trên Azure Public Blob Storage kèm header cache 1 năm (`max-age=31536000`), loại bỏ hoàn toàn tình trạng lỗi 404/rate-limit từ CDN Amazon.
+* **In-memory Application Caching:** `RecommenderCosmosClient` lưu đệm kết quả gợi ý ngay trên RAM của Pod, giảm đáng kể số lượt truy vấn RU/s vào Cosmos DB.
+* **Connection Pooling:** Duy trì HTTP/TCP connection pool tái sử dụng tới PostgreSQL (SQLAlchemy pool) và Cosmos DB thay vì tạo kết nối mới ở mỗi request.
+* **Partition Key Optimization:** Sử dụng Partition Key `/id` đồng đều cho từng `user_id` và `product_id` trong Cosmos DB để tránh "Hot Partition".
+* **Partial & Composite Indexing (PostgreSQL):** Sử dụng Partial Index (`WHERE is_disabled = TRUE`, `WHERE is_active = TRUE`, `WHERE status IN (...)`) và Composite Index (`(user_id, created_at DESC)`, `(product_id, created_at DESC)`) để giảm kích thước index trên RAM và tăng tốc truy vấn lọc/sắp xếp.
+* **Data Compression:** Nén payload JSON trả về từ cả 3 FastAPI microservices bằng `GZipMiddleware` (`minimum_size=500`).
 
 ---
 
 ### Tiêu chí 4: Hiện thực hệ thống Web & Nghiệp vụ (3.0 điểm)
 
-1. **Deploy trang web lên Cloud - Đủ 4 trang nghiệp vụ (1.0đ):**
-* *Lựa chọn Frontend:* Sử dụng **React.js (Vite) + Tailwind CSS**.
-* *Lý do:* Build ra mã nguồn tĩnh siêu nhẹ, đóng gói vào Docker container chạy bằng Nginx (dung lượng chỉ ~25MB RAM, khởi động tức thì), tiêu thụ rất ít tài nguyên trên VM gói sinh viên so với runtime Node.js của Next.js.
+1. **Deploy trang web lên Cloud - Đủ 5 phân hệ nghiệp vụ & quản trị (1.0đ):**
 
-
-* *Chi tiết 4 màn hình:*
-* **Trang 1 - Trang chủ (Home Page):** Hiển thị danh mục sản phẩm, banner, và khối Carousel "Gợi ý dành riêng cho bạn" gọi từ Recommender API.
-* **Trang 2 - Trang chi tiết sản phẩm (Product Detail Page):** Mô tả sản phẩm, giá, số sao, form đánh giá rating/review, kèm khối "Sản phẩm thường được mua cùng".
-* **Trang 3 - Modal/Trang thêm vào giỏ hàng (Add to Cart Modal/Action):** Cho phép chọn số lượng, biến thể, kiểm tra nhanh tồn kho, cập nhật giỏ hàng tức thời không cần tải lại trang.
-* **Trang 4 - Danh sách giỏ hàng & Thanh toán (Cart Page):** Liệt kê các mặt hàng, điều chỉnh số lượng, tính tổng tiền, nút "Đặt hàng" (Checkout).
-
+* *Lựa chọn Frontend:* **React.js (Vite) + TypeScript + Tailwind CSS**, đóng gói tĩnh phục vụ qua Nginx (~25MB RAM).
+* *Chi tiết các màn hình nghiệp vụ:*
+* **Trang 1 - Trang chủ (Home Page):** Hiển thị danh mục sản phẩm đang mở bán (`is_active = TRUE`) với ảnh `thumb_url` sắc nét, thanh tìm kiếm và khối Carousel "Gợi ý dành riêng cho bạn" gọi từ Recommender API.
+* **Trang 2 - Trang chi tiết sản phẩm (Product Detail Page):** Bộ sưu tập nhiều góc ảnh (`large_urls` + zoom `hi_res_url`), mô tả sản phẩm, giá, số sao, form đánh giá rating/review, kèm khối "Sản phẩm thường được mua cùng".
+* **Trang 3 - Modal thêm vào giỏ hàng (Add to Cart Modal):** Chọn số lượng, kiểm tra nhanh tồn kho, cập nhật giỏ hàng tức thời.
+* **Trang 4 - Danh sách giỏ hàng & Thanh toán (Cart & Checkout Page):** Liệt kê mặt hàng, điều chỉnh số lượng, tính tổng tiền, chọn phương thức thanh toán (`COD` hoặc `ONLINE` qua mã VietQR), theo dõi trạng thái đơn hàng.
+* **Trang 5 - Bảng điều khiển Quản trị viên (Admin Dashboard):** Phân hệ quản trị bảo vệ bởi RBAC (`role == 'admin'`): quản lý danh mục sản phẩm (thêm, sửa, cập nhật tồn kho, ẩn/hiện sản phẩm `is_active`), quản lý người dùng (phân quyền `customer`/`admin`, vô hiệu hóa tài khoản vi phạm `is_disabled`), kiểm duyệt đánh giá và điều phối vòng đời trạng thái đơn hàng.
 
 
 
 2. **Triển khai hệ thống Blue/Green Deployment (0.5đ):**
-* Tạo 2 Kubernetes Deployment riêng biệt trên AKS: `recommender-deployment-blue` (chạy phiên bản v1) và `recommender-deployment-green` (chạy phiên bản v2).
-* Sử dụng một Kubernetes Service làm Router:
+
+* Tạo 2 Kubernetes Deployment riêng biệt trên AKS (`namespace: ecommerce-rec`): `recommender-deployment-blue` (`MODEL_VERSION=v1.0-svd`, mặc định `replicas: 1`) và `recommender-deployment-green` (`MODEL_VERSION=v2.0-svd`, mặc định `replicas: 0` để tiết kiệm RAM trên node `Standard_B2s`).
+* Sử dụng Kubernetes Service `k8s/recommender-service.yaml` làm Router:
+
 ```yaml
 apiVersion: v1
 kind: Service
 metadata:
   name: recommender-service
+  namespace: ecommerce-rec
 spec:
   selector:
     app: recommender
-    version: blue   # Khi muốn chuyển sang Green, chỉ cần đổi thành: version: green
+    version: blue   # Chuyển sang Green tức thì bằng lệnh: kubectl patch svc recommender-service ...
   ports:
-    - port: 80
+    - name: http
+      port: 8003
       targetPort: 8003
 
 ```
 
+* Khi cập nhật mô hình mới qua GitHub Actions CD (`deploy-k8s.yml`): Triển khai pod Green (`replicas: 1`) $\rightarrow$ Kiểm tra `/health` Readiness Probe sẵn sàng $\rightarrow$ Cập nhật label selector của Service sang `green` $\rightarrow$ Chuyển dịch lưu lượng Zero-downtime và tự động scale slot cũ về `0` replica.
 
-* Khi cập nhật mô hình mới: Triển khai pod Green $\rightarrow$ Kiểm tra trạng thái Health Check sẵn sàng $\rightarrow$ Cập nhật label selector của Service sang `green` $\rightarrow$ Chuyển dịch lưu lượng tức thời mà không gây gián đoạn dịch vụ (Zero-downtime).
+3. **Triển khai Microservices độc lập và giao tiếp nội bộ (1.0đ):**
 
+* **Auth Service (Port 8001):** Đăng ký, đăng nhập, băm mật khẩu (bcrypt), cấp phát và xác thực JWT Token theo thời gian thực (kiểm tra cờ `is_disabled` trực tiếp trên DB), cùng cụm API quản trị người dùng (`/api/v1/admin/users`).
+* **Order/Cart Service (Port 8002):** Quản lý danh mục sản phẩm, giỏ hàng, đặt hàng, thanh toán Online VietQR/Webhook và cụm API quản trị cửa hàng (`/api/v1/admin/*`). Khi nhận request cần xác thực, `Order Service` gọi HTTP nội bộ sang `http://auth-service:8001/api/v1/auth/verify-token` để xác minh danh tính và quyền hạn người dùng trước khi xử lý.
+* **Recommender Service (Port 8003):** Phục vụ gợi ý cá nhân hóa và sản phẩm mua kèm.
 
-3. **Triển khai 2 Microservices độc lập và giao tiếp nội bộ (1.0đ):**
-* **Service A - Auth Service (Port 8001):**
-* Đăng ký, đăng nhập tài khoản người dùng, băm mật khẩu (bcrypt), sinh JWT (JSON Web Token) chứa `user_id` và `role`.
+4. **Quy trình Thanh toán Online & Bảo toàn Dữ liệu Giao dịch (ACID & State Machine):**
 
+* **Luồng vòng đời đơn hàng & Thanh toán Online:**
 
-* **Service B - Order/Cart Service (Port 8002):**
-* Quản lý trạng thái giỏ hàng và đặt hàng.
+```text
+[Checkout ONLINE] -> PENDING_PAYMENT (Giữ kho + Sinh mã PAY-xxxxxx)
+                          │
+                          ├── (Nhận tín hiệu Webhook hợp lệ) ──> CONFIRMED -> SHIPPED -> DELIVERED
+                          └── (Hủy đơn / Quá hạn 15 phút)   ──> CANCELLED (Tự động hoàn trả tồn kho)
 
+```
 
-* **Cơ chế giao tiếp giữa 2 Service:**
-* Khi người dùng gửi request tạo đơn hàng đến `Order Service`, request mang theo Bearer Token.
-* `Order Service` thực hiện HTTP Call nội bộ (hoặc giải mã xác thực public key) sang `http://auth-service/api/v1/auth/verify-token` để xác thực danh tính người dùng trước khi trừ kho và tạo đơn.
+* **Pessimistic Concurrency Control (Khóa bi quan)** trong `services/order_service/inventory_lock.py`:
 
-
-
-
-4. **Xử lý bài toán Concurrency, Khóa đồng bộ và Rollback chống vi phạm:**
-* *Vấn đề đặt ra:* Khi chỉ còn 1 sản phẩm cuối cùng trong kho nhưng có nhiều người dùng bấm "Mua ngay" cùng một thời điểm.
-* *Giải pháp - Pessimistic Concurrency Control (Khóa bi quan):*
-* Thực hiện câu lệnh SQL có khóa hàng tại `Order Service`:
 ```sql
 BEGIN;
 SELECT stock_quantity FROM products WHERE id = :product_id FOR UPDATE;
--- Kiểm tra: Nếu stock_quantity < requested_quantity => ROLLBACK và báo lỗi hết hàng
+-- Kiểm tra: Nếu stock_quantity < requested_quantity => ROLLBACK và trả về HTTP 409 Conflict
 UPDATE products SET stock_quantity = stock_quantity - :requested_quantity WHERE id = :product_id;
-INSERT INTO orders (user_id, total_amount, status) VALUES (...);
+INSERT INTO orders (user_id, total_amount, status, payment_method, payment_status, payment_code) VALUES (...);
 COMMIT;
 
 ```
 
-
-* Nếu có bất kỳ lỗi nào trong quá trình xử lý (lỗi thanh toán, lỗi mạng), lệnh `ROLLBACK` tự động hoàn trả lại số lượng tồn kho nguyên vẹn, đảm bảo tính nhất quán dữ liệu ACID.
-
+* **3 nguyên tắc bảo toàn dữ liệu & toàn vẹn giao dịch:**
+1. *Soft-Disable User:* Không xóa vật lý tài khoản đã phát sinh đơn hàng hoặc đánh giá (`409 Conflict`); sử dụng cờ `is_disabled` để vô hiệu hóa phiên đăng nhập và thu hồi hiệu lực JWT ngay lập tức trên toàn bộ Microservices mà vẫn giữ trọn vẹn lịch sử giao dịch cho khóa ngoại và `ml_pipeline`.
+2. *Append-Only Orders & Soft-Archive Products:* Tuyệt đối không xóa đơn hàng đã tạo; mọi thay đổi vận hành tuân thủ State Machine hợp lệ và tự động hoàn trả tồn kho (`SELECT ... FOR UPDATE`) khi đơn chuyển sang `CANCELLED` hoặc quá hạn thanh toán. Sản phẩm từng phát sinh đơn hàng được ẩn qua `is_active = FALSE` thay vì xóa cứng.
+3. *Idempotent Payment Webhook:* Xác thực chữ ký `X-Payment-Signature` (HMAC-SHA256) và khóa dòng đơn hàng (`SELECT ... FOR UPDATE`) khi đối soát thanh toán để chống giả mạo tín hiệu và chống cộng/xác nhận trùng lặp khi webhook gửi lại nhiều lần.
 
 
 
 5. **Sử dụng FaaS (Azure Function) (0.5đ):**
-* Viết một Azure Function HTTP Trigger bằng Python (`azure_functions/LogInteractionFunction`).
-* Mỗi khi người dùng bấm vào xem sản phẩm hoặc gửi đánh giá, frontend gọi ngầm một request bất đồng bộ tới Function này.
-* Function đẩy dữ liệu trực tiếp vào Azure Blob Storage dưới dạng append log mà không làm chậm luồng xử lý chính của trang web.
 
+* Hàm HTTP Trigger Python (`azure_functions/LogInteractionFunction`) tiếp nhận các sự kiện `view`, `click`, `add_to_cart`, `checkout`, `purchase`, `rating` từ frontend và đẩy bất đồng bộ qua cơ chế Append Blob vào container `interaction-logs` của Azure Blob Storage.
 
 6. **Tối ưu độ mượt giao diện Web (Frontend Smoothness):**
-* **Optimistic UI Updates:** Khi người dùng bấm "Thêm vào giỏ hàng", giao diện tăng số lượng giỏ hàng ngay lập tức trên UI trước khi server phản hồi thành công; nếu server trả về lỗi mới rollback lại số cũ.
-* **Skeleton Loading:** Sử dụng khung xương hiệu ứng shimmer trong lúc chờ dữ liệu API của khối gợi ý sản phẩm, tránh giật layout (Cumulative Layout Shift = 0).
-* **Debounced Event Logging:** Các hành vi lướt/tìm kiếm được debounce 300ms trước khi gửi về API để không làm nghẽn mạng client.
 
-
+* **Optimistic UI Updates:** Cập nhật ngay badge số lượng giỏ hàng trên UI trước khi server phản hồi; rollback nếu server báo hết hàng.
+* **Skeleton Loading & Debounced Event Logging:** Hiển thị khung xương shimmer khi tải API gợi ý và debounce 300ms các sự kiện gửi về FaaS.
 
 ---
 
 ## Trích xuất & Trừu tượng hóa dữ liệu Amazon Reviews 2023
 
-Tập dữ liệu `McAuley-Lab/Amazon-Reviews-2023` được trừu tượng hóa và ánh xạ vào hệ thống như sau:
+Tập dữ liệu `McAuley-Lab/Amazon-Reviews-2023` (`Musical_Instruments`) được ánh xạ và nâng cấp vào hệ thống:
 
-* **Tập Metadata (`meta_sample.jsonl`):**
-* Trường `parent_asin` $\rightarrow$ Ánh xạ thành `product_id`.
-* Trường `title` $\rightarrow$ Ánh xạ thành `product_name`.
-* Trường `price` $\rightarrow$ Ánh xạ thành `price` (nếu null, mặc định random phân bổ chuẩn).
-* Trường `images` $\rightarrow$ Lấy link ảnh đầu tiên làm `thumbnail_url`.
-* Trường `categories` $\rightarrow$ Ánh xạ thành `category`.
+* **Metadata & Multi-Resolution Images (`notebooks/02_update_product_images_etl.ipynb`):**
+* Ánh xạ `parent_asin` $\rightarrow$ `product_id`, `title` $\rightarrow$ `name`, `price` $\rightarrow$ `price`, `categories` $\rightarrow$ `category`.
+* Trích xuất và kiểm tra sống (HTTP ping bất đồng bộ) cho **1.000 sản phẩm** (tổng cộng **4.522 tệp ảnh hợp lệ**: 1 `hi_res_url`, tối đa 3 `large_urls` và 1 `thumb_url` mỗi sản phẩm, với 722 sản phẩm đủ trọn bộ 3 ảnh `large`), sau đó upload toàn bộ lên Azure Public Blob Storage (`product-images`) và cập nhật lên Hugging Face Dataset (`cuongduongok/amazon-musical-instruments-clean`).
 
 
-* **Tập Reviews & Interactions (`review_sample.jsonl`):**
-* Trường `user_id` $\rightarrow$ Khách hàng.
-* Trường `parent_asin` $\rightarrow$ Sản phẩm được tương tác.
-* Trường `rating` (1 đến 5 sao) $\rightarrow$ Điểm Explicit Feedback.
-* Trường `timestamp` $\rightarrow$ Thời gian tương tác.
+* **Reviews & Interactions:** `user_id`, `parent_asin` $\rightarrow$ `product_id`, `rating` (1–5 sao), `timestamp`.
+* **Co-purchase Bundles:** Tính ma trận đồng xuất hiện từ các sản phẩm được cùng nhóm người dùng tương tác/mua chung kết hợp TF-IDF.
+
+---
+
+## Tiến độ triển khai theo lộ trình 5 bước
+
+* [x] **Bước 1: Pipeline Dữ liệu & Mô hình học máy (`ml_pipeline/`, `notebooks/`, `models/`)**
+* Hoàn thiện `config.py`, `etl_extractor.py` (lọc `is_active = TRUE`, hợp nhất PostgreSQL `reviews` + `orders` + Blob logs), `train_recommender.py` (cơ chế cooldown 7 ngày & ngưỡng >100 tương tác), `export_to_cosmos.py` (retry 429), `pipeline_runner.py` và pipeline ETL cập nhật 4.522 ảnh đa độ phân giải (`02_update_product_images_etl.ipynb`).
 
 
-* **Quy tắc phân nhóm sản phẩm liên quan (Co-purchase):**
-* Dựa trên lịch sử các sản phẩm được đánh giá hoặc mua cùng bởi cùng một nhóm khách hàng trong khoảng thời gian nhất định để tính ma trận đồng xuất hiện (Co-occurrence matrix).
+* [x] **Bước 2: Backend Microservices & FaaS (`services/`, `azure_functions/`)**
+* Hoàn thiện `auth_service` (8001 - JWT, Soft-Disable, RBAC), `order_service` (8002 - Pessimistic Lock, Thanh toán Online VietQR/Webhook, Admin CRUD, trả về ảnh đa độ phân giải), `recommender_service` (8003 - Blue/Green), `LogInteractionFunction` (7071 - Append Blob) và script kiểm thử `scripts/test_backend_apis.py`.
+
+
+* [ ] **Bước 3: Giao diện Web Client (`frontend/`)**
+* Xây dựng 4 màn hình khách hàng & Bảng điều khiển Quản trị viên (Admin Dashboard) với React + Vite + Tailwind + Zustand.
+
+
+* [x] **Bước 4: Đóng gói Container, Kubernetes AKS & CI/CD (`k8s/`, `.github/workflows/`, `docker-compose.yml`)**
+* Hoàn thiện Multi-stage `Dockerfile` cho từng service, 8 manifest Kubernetes Blue/Green & Ingress định tuyến RBAC/Payment trong `k8s/` và quy trình GitHub Actions tách bạch (CI tự động kiểm tra code/build khi push, CD bấm nút thủ công `workflow_dispatch` khi deploy lên AKS và tự scale-down slot cũ về 0 replica).
+
+
+* [x] **Bước 5: Script Đo độ trễ & Nghiệm thu (`scripts/latency_benchmark.py`)**
+* Hoàn thiện công cụ đo 100 requests tính $P_{50}, P_{90}, P_{99}$ Network/Storage Latency và tự động xuất biểu đồ PNG vào `exports/`.
 
 
 
 ---
 
-## Lộ trình các bước thực hiện & Danh mục file code cần viết
+## Hướng dẫn khởi chạy & Kiểm thử nhanh
 
-Quy trình triển khai chia làm 5 bước lớn, thực hiện tuần tự theo luồng file:
+### 1. Cấu hình biến môi trường & Chạy toàn bộ hệ thống bằng Docker Compose (Local)
 
-```
-[Bước 1: Chuẩn bị Dữ liệu & Huấn luyện Model]
-      ├── 1.1: ml_pipeline/config.py
-      ├── 1.2: ml_pipeline/etl_extractor.py
-      ├── 1.3: ml_pipeline/train_recommender.py
-      └── 1.4: ml_pipeline/export_to_cosmos.py
-               │
-               ▼
-[Bước 2: Phát triển Backend Microservices & FaaS]
-      ├── 2.1: services/auth_service/main.py
-      ├── 2.2: services/order_service/inventory_lock.py & main.py
-      ├── 2.3: services/recommender_service/cosmos_client.py & main.py
-      └── 2.4: azure_functions/LogInteractionFunction/__init__.py
-               │
-               ▼
-[Bước 3: Phát triển Giao diện Frontend (React + Vite)]
-      ├── 3.1: frontend/src/store/cartStore.ts
-      ├── 3.2: frontend/src/pages/HomePage.tsx
-      ├── 3.3: frontend/src/pages/ProductDetail.tsx
-      ├── 3.4: frontend/src/pages/AddToCartModal.tsx
-      └── 3.5: frontend/src/pages/CartPage.tsx
-               │
-               ▼
-[Bước 4: Đóng gói Docker & Triển khai AKS (Blue/Green)]
-      ├── 4.1: Các tệp Dockerfile (Frontend & 3 Services)
-      ├── 4.2: k8s/configmap-secrets.yaml
-      ├── 4.3: k8s/recommender-blue.yaml & recommender-green.yaml
-      └── 4.4: k8s/recommender-service.yaml & ingress.yaml
-               │
-               ▼
-[Bước 5: Kiểm thử Đo độ trễ & Hoàn thiện Báo cáo]
-      ├── 5.1: scripts/latency_benchmark.py
-      └── 5.2: Báo cáo Word/PowerPoint chuẩn đồ án KLTN
+```bash
+cp .env.example .env
+# Đảm bảo .env đã khai báo các biến cho Payment & Policy v2:
+# PAYMENT_WEBHOOK_SECRET="dev-payment-webhook-secret-2026"
+# PAYMENT_EXPIRE_MINUTES=15
+# ALLOW_DEV_X_USER_ID="true"
+
+# Khởi chạy mới toàn bộ stack (dùng `down -v` nếu cần làm sạch volume DB cũ để nạp lại schema & ảnh mới)
+docker compose down -v
+docker compose up -d --build
 
 ```
 
-### Bước 1: Pipeline Dữ liệu và Mô hình học máy
-0. Xây dựng dữ liệu mẩu và khởi tạo các DB củng như train model ban đầu.
-1. Viết `ml_pipeline/config.py`: Định nghĩa các chuỗi kết nối Azure Blob, Cosmos DB, đường dẫn thư mục và siêu tham số mô hình.
-2. Viết `ml_pipeline/etl_extractor.py`: Đọc dữ liệu trong hệ thống để cập nhật models và recommender...
-3. Viết `ml_pipeline/train_recommender.py`:
-* Xây dựng ma trận tương quan giữa các sản phẩm (Item-to-Item Cosine Similarity).
-* Huấn luyện mô hình phân rã ma trận (Matrix Factorization) để sinh danh sách Top-10 sản phẩm cho từng `user_id`.
-4. Viết `ml_pipeline/export_to_cosmos.py`: Kết nối Azure Cosmos DB và lưu dữ liệu đã tiền tính toán (Precomputed Recommendations) dưới dạng tài liệu NoSQL.
+### 2. Chạy môi trường phát triển Python & Huấn luyện lại Model
 
-### Bước 2: Xây dựng Microservices Backend & Azure Function
+```bash
+# Khởi tạo dữ liệu mẫu (kèm ảnh đa độ phân giải) vào PostgreSQL, Azurite và Cosmos Emulator
+python scripts/init_local_dev.py
 
-1. Viết `services/auth_service/main.py`: Cung cấp API `/register`, `/login`, và `/verify-token`.
-2. Viết `services/order_service/inventory_lock.py` & `main.py`: Cung cấp API giỏ hàng, thực thi giao dịch trừ kho có khóa chống trùng lặp dữ liệu (Concurrency Lock).
-3. Viết `services/recommender_service/cosmos_client.py` & `main.py`: Cung cấp API `/recommendations/{user_id}` đọc dữ liệu từ Cosmos DB trả về JSON cho frontend với độ trễ tối thiểu.
-4. Viết `azure_functions/LogInteractionFunction/__init__.py`: Tiếp nhận sự kiện tương tác từ web và ghi vào Azure Blob Storage.
+# Chạy luồng ETL -> Train SVD/Hybrid -> Export lên Cosmos DB
+# (Thêm cờ --force nếu muốn ép train ngay khi dữ liệu mới chưa đủ 100 tương tác hoặc chưa qua 7 ngày)
+python -m ml_pipeline.pipeline_runner --model-version v1.0-svd --force
 
-### Bước 3: Phát triển Giao diện Người dùng Web Frontend
+# Khởi chạy đồng thời 3 Microservices (8001-8003) & FaaS (7071)
+python scripts/run_backend_services.py
 
-1. Cấu hình `frontend/src/store/cartStore.ts`: Quản lý state giỏ hàng và danh tính người dùng bằng Zustand.
-2. Viết `frontend/src/pages/HomePage.tsx`: Trang chủ hiển thị danh sách sản phẩm và dải Carousel gợi ý cá nhân hóa.
-3. Viết `frontend/src/pages/ProductDetail.tsx`: Trang chi tiết hiển thị sản phẩm kèm mục "Sản phẩm thường được mua cùng".
-4. Viết `frontend/src/pages/AddToCartModal.tsx`: Thao tác thêm sản phẩm mượt mà với Optimistic UI.
-5. Viết `frontend/src/pages/CartPage.tsx`: Hiển thị giỏ hàng và xử lý nút đặt hàng.
+```
 
-### Bước 4: Đóng gói Container và Triển khai Cloud (Blue/Green)
+### 3. Đo kiểm độ trễ Network & Storage (100 Requests)
 
-1. Viết `Dockerfile` cho Frontend và từng Microservice: Sử dụng Multi-stage build để tối ưu kích thước image (< 100MB).
-2. Viết `k8s/configmap-secrets.yaml`: Lưu trữ biến môi trường bảo mật trên cụm Kubernetes.
-3. Viết `k8s/recommender-blue.yaml` và `recommender-green.yaml`: Tạo hai bản deployment ứng dụng model.
-4. Viết `k8s/recommender-service.yaml` và `k8s/ingress.yaml`: Cấu hình bộ điều hướng chuyển đổi lưu lượng giữa hai phiên bản Blue và Green.
+```bash
+python scripts/latency_benchmark.py \
+  --sea-url "http://localhost:8003/api/v1/recommendations/popular/trending" \
+  --requests 100 --concurrency 10
 
-### Bước 5: Đo đạc chỉ số & Hoàn thiện hồ sơ nghiệm thu
+```
 
-1. Viết `scripts/latency_benchmark.py`: Thực thi kịch bản đo độ trễ Network giữa các vùng Azure (Southeast Asia vs East US) và đo thông lượng đọc/ghi trên Storage.
-2. Xuất dữ liệu biểu đồ độ trễ và hình ảnh chứng minh trên Azure Portal đưa vào báo cáo Word và slide PowerPoint theo định dạng Khóa luận tốt nghiệp.
+### 4. Chuyển đổi lưu lượng Zero-downtime Blue/Green trên AKS
+
+```bash
+kubectl patch service recommender-service -n ecommerce-rec \
+  -p '{"spec":{"selector":{"app":"recommender","version":"green"}}}'
+
+```

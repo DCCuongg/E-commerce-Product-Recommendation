@@ -1,0 +1,76 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ecommerce-ingress
+  namespace: ecommerce-rec
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          # 1. Admin Users Management -> Auth Service (Port 8001 - Khớp trước /api/v1/admin)
+          - path: /api/v1/admin/users(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 8001
+
+          # 2. Auth Service (Port 8001)
+          - path: /api/v1/auth(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 8001
+
+          # 3. Recommender Service - Item Bundles (Ưu tiên khớp trước /api/v1/products)
+          - path: /api/v1/products/[^/]+/frequently-bought-together
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: recommender-service
+                port:
+                  number: 8003
+
+          # 4. Recommender Service - User & Trending Recommendations (Port 8003)
+          - path: /api/v1/recommendations(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: recommender-service
+                port:
+                  number: 8003
+
+          # 5. Admin Shop & Online Payments -> Order Service (Port 8002)
+          - path: /api/v1/(admin|payments)(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: order-service
+                port:
+                  number: 8002
+
+          # 6. Order, Cart & Products Catalog Service (Port 8002)
+          - path: /api/v1/(products|cart|orders)(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: order-service
+                port:
+                  number: 8002
+
+          # 7. Frontend React SPA (Port 80 - Nếu deploy Frontend trên AKS)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: 80

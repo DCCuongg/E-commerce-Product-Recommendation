@@ -1,6 +1,7 @@
 """
 services/auth_service/auth_handler.py
-Xử lý băm mật khẩu (bcrypt), sinh và giải mã xác thực JWT (JSON Web Token).
+Xử lý băm mật khẩu (bcrypt), sinh và giải mã xác thực JWT (JSON Web Token),
+kiểm tra trạng thái vô hiệu hóa tài khoản (is_disabled) và phân quyền Admin (RBAC).
 """
 
 import os
@@ -11,6 +12,9 @@ import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
+
+from .models import User, get_db
 
 # Cấu hình JWT từ biến môi trường
 JWT_SECRET_KEY = os.getenv(
@@ -41,7 +45,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     if not plain_password or not hashed_password:
         return False
 
-    # Tương thích trực tiếp với các tài khoản mẫu trong 03_seed_auth.sql
     if (
         hashed_password == SEED_PLACEHOLDER_HASH
         and plain_password == SEED_DEFAULT_PASSWORD
@@ -118,3 +121,39 @@ def get_current_user_claims(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return decode_access_token(credentials.credentials)
+
+
+def get_active_current_user(
+    claims: Dict[str, Any] = Depends(get_current_user_claims),
+    db: Session = Depends(get_db),
+) -> User:
+    """
+    Truy vấn DB xác nhận user tồn tại và chưa bị vô hiệu hóa (is_disabled == False).
+    Nếu tài khoản bị khóa, thu hồi quyền truy cập ngay lập tức (HTTP 403).
+    """
+    user_id = claims.get("user_id") or claims.get("sub")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tài khoản không tồn tại trong hệ thống.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if user.is_disabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tài khoản đã bị vô hiệu hóa. Liên hệ quản trị viên để được hỗ trợ.",
+        )
+    return user
+
+
+def require_admin(
+    current_user: User = Depends(get_active_current_user),
+) -> User:
+    """FastAPI Dependency bắt buộc quyền quản trị viên (role == 'admin') và tài khoản đang hoạt động."""
+    if current_user.role != "admin" or current_user.is_disabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Từ chối truy cập: Yêu cầu quyền quản trị viên (admin).",
+        )
+    return current_user

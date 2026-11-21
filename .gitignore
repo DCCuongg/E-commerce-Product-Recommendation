@@ -55,7 +55,6 @@ data/processed/*
 !data/processed/.gitkeep
 
 # Model weights, embeddings, vector cache
-*.pkl
 *.joblib
 *.model
 *.h5

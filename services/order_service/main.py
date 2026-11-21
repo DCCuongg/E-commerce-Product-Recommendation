@@ -15,7 +15,7 @@ import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from sqlalchemy import func, or_, text
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from .inventory_lock import execute_checkout_with_pessimistic_lock
@@ -82,7 +82,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# Nén payload JSON trả về bằng Gzip (Theo Rubric Tiêu chí 3.4 - Data Compression)
+# Nén payload JSON trả về bằng Gzip
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
@@ -96,8 +96,6 @@ def verify_authenticated_user(
     """
     Xác thực danh tính người dùng bằng cách gọi HTTP nội bộ sang `Auth Service`:
     `GET http://auth-service:8001/api/v1/auth/verify-token`
-    Nếu có Bearer Token, ưu tiên gọi Auth Service; nếu Auth Service đang tắt (chạy độc lập),
-    fallback giải mã bằng JWT Secret chung.
     """
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
@@ -112,9 +110,15 @@ def verify_authenticated_user(
                 if data.get("valid") and data.get("user_id"):
                     return data
             elif resp.status_code in (401, 403):
+                try:
+                    err_detail = resp.json().get(
+                        "detail", "Token không hợp lệ từ Auth Service."
+                    )
+                except ValueError:
+                    err_detail = "Token không hợp lệ từ Auth Service."
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail=resp.json().get("detail", "Token không hợp lệ từ Auth Service."),
+                    detail=err_detail,
                 )
         except HTTPException:
             raise
@@ -123,7 +127,6 @@ def verify_authenticated_user(
                 f"Không kết nối được Auth Service tại {verify_url} ({exc}), fallback giải mã JWT cục bộ."
             )
 
-        # Fallback giải mã trực tiếp nếu chạy đơn lẻ không bật container Auth Service
         try:
             payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
             return {
@@ -138,7 +141,6 @@ def verify_authenticated_user(
                 detail=f"Token không hợp lệ hoặc đã hết hạn: {str(exc)}",
             )
 
-    # Hỗ trợ Header X-User-Id cho kịch bản test nhanh / demo nếu cần
     if x_user_id and x_user_id.strip():
         return {
             "valid": True,
@@ -160,7 +162,12 @@ def verify_authenticated_user(
 @app.get("/health", tags=["Health"])
 def health_check(db: Session = Depends(get_db)):
     try:
-        product_count = db.query(func.count(Product.id)).scalar() or 0
+        product_count = (
+            db.query(func.count(Product.id))
+            .filter(Product.is_active.is_(True))
+            .scalar()
+            or 0
+        )
         db_status = "connected"
     except Exception as exc:
         product_count = 0
@@ -196,8 +203,8 @@ def list_products(
     ),
     db: Session = Depends(get_db),
 ):
-    """Lấy danh sách sản phẩm nhạc cụ hỗ trợ phân trang, lọc theo danh mục và tìm kiếm."""
-    query = db.query(Product)
+    """Lấy danh sách sản phẩm nhạc cụ đang mở bán (`is_active = TRUE`)."""
+    query = db.query(Product).filter(Product.is_active.is_(True))
 
     if category and category.strip() and category.lower() != "all":
         query = query.filter(Product.category.ilike(f"%{category.strip()}%"))
@@ -240,7 +247,7 @@ def list_categories(db: Session = Depends(get_db)):
     """Lấy danh sách các danh mục sản phẩm kèm số lượng mặt hàng."""
     rows = (
         db.query(Product.category, func.count(Product.id).label("count"))
-        .filter(Product.category.isnot(None))
+        .filter(Product.is_active.is_(True), Product.category.isnot(None))
         .group_by(Product.category)
         .order_by(func.count(Product.id).desc())
         .all()
@@ -265,7 +272,9 @@ def get_products_batch(payload: BatchProductsRequest, db: Session = Depends(get_
     if not payload.product_ids:
         return []
     products = (
-        db.query(Product).filter(Product.id.in_(payload.product_ids)).all()
+        db.query(Product)
+        .filter(Product.id.in_(payload.product_ids), Product.is_active.is_(True))
+        .all()
     )
     prod_map = {p.id: ProductResponse.from_orm_product(p) for p in products}
     return [prod_map[pid] for pid in payload.product_ids if pid in prod_map]
@@ -285,7 +294,6 @@ def get_product_detail(product_id: str, db: Session = Depends(get_db)):
             detail=f"Không tìm thấy sản phẩm với mã '{product_id}'.",
         )
 
-    # Tính điểm trung bình đánh giá nếu có trong bảng reviews
     review_stats = (
         db.query(
             func.avg(Review.rating).label("avg_rating"),
@@ -339,6 +347,7 @@ def _build_cart_summary(user_id: str, db: Session) -> CartSummaryResponse:
                 category=prod.category,
                 unit_price=round(u_price, 2),
                 image_url=prod.image_url,
+                thumb_url=prod.thumb_url or prod.image_url,
                 stock_quantity=prod.stock_quantity,
                 quantity=row.quantity,
                 subtotal=sub,
@@ -373,11 +382,15 @@ def add_item_to_cart(
     """Thêm sản phẩm vào giỏ hàng (Kiểm tra nhanh tồn kho trước khi thêm)."""
     user_id = user_claims["user_id"]
 
-    product = db.query(Product).filter(Product.id == payload.product_id).first()
+    product = (
+        db.query(Product)
+        .filter(Product.id == payload.product_id, Product.is_active.is_(True))
+        .first()
+    )
     if not product:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Sản phẩm '{payload.product_id}' không tồn tại.",
+            detail=f"Sản phẩm '{payload.product_id}' không tồn tại hoặc đã ngừng kinh doanh.",
         )
 
     existing_item = (
@@ -509,10 +522,7 @@ def checkout_order(
     db: Session = Depends(get_db),
 ):
     """
-    Thực hiện đặt hàng (Checkout) có áp dụng khóa bi quan `SELECT ... FOR UPDATE`:
-    - Nếu truyền `items` trong body: đặt trực tiếp danh sách sản phẩm đó.
-    - Nếu không truyền `items`: lấy toàn bộ sản phẩm trong giỏ hàng hiện tại của user.
-    - Nếu có lỗi hoặc hết hàng: tự động `ROLLBACK` hoàn trả kho nguyên vẹn.
+    Thực hiện đặt hàng (Checkout) có áp dụng khóa bi quan `SELECT ... FOR UPDATE`.
     """
     user_id = user_claims["user_id"]
     req_items = payload.items if payload else None
@@ -571,6 +581,7 @@ def list_user_orders(
                     product_id=oi.product_id,
                     product_name=prod.name if prod else oi.product_id,
                     image_url=prod.image_url if prod else None,
+                    thumb_url=(prod.thumb_url or prod.image_url) if prod else None,
                     quantity=oi.quantity,
                     unit_price=round(u_price, 2),
                     subtotal=round(u_price * oi.quantity, 2),
@@ -625,6 +636,7 @@ def get_order_by_id(
                 product_id=oi.product_id,
                 product_name=prod.name if prod else oi.product_id,
                 image_url=prod.image_url if prod else None,
+                thumb_url=(prod.thumb_url or prod.image_url) if prod else None,
                 quantity=oi.quantity,
                 unit_price=round(u_price, 2),
                 subtotal=round(u_price * oi.quantity, 2),

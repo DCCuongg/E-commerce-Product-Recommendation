@@ -1,30 +1,67 @@
--- Mật khẩu mặc định băm bằng bcrypt cho 'Password123!': $2b$12$e8Y...
+-- Kích hoạt pgcrypto để sinh mã băm bcrypt chuẩn ($2a$12$...) cho 'Password123!'
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 INSERT INTO
     users (
         id,
         username,
         email,
         hashed_password,
-        role
+        role,
+        is_disabled
     )
 VALUES (
         'U_ADMIN_01',
         'admin',
         'admin@ecommerce.local',
-        '$2b$12$KIXeWq1i8jYpB34r82K0n.LwK9f9B0i6GhzUqW2pM1iXj4A1p/ZKi',
-        'admin'
+        crypt (
+            'Password123!',
+            gen_salt ('bf', 12)
+        ),
+        'admin',
+        FALSE
     ),
     (
         'U_TEST_01',
         'cuongduong',
         'cuong@ecommerce.local',
-        '$2b$12$KIXeWq1i8jYpB34r82K0n.LwK9f9B0i6GhzUqW2pM1iXj4A1p/ZKi',
-        'customer'
+        crypt (
+            'Password123!',
+            gen_salt ('bf', 12)
+        ),
+        'customer',
+        FALSE
     ),
     (
         'U_TEST_02',
         'testuser',
         'test@ecommerce.local',
-        '$2b$12$KIXeWq1i8jYpB34r82K0n.LwK9f9B0i6GhzUqW2pM1iXj4A1p/ZKi',
-        'customer'
+        crypt (
+            'Password123!',
+            gen_salt ('bf', 12)
+        ),
+        'customer',
+        FALSE
+    ),
+    (
+        'U_CUST_03',
+        'minhanh_music',
+        'minhanh@ecommerce.local',
+        crypt (
+            'Password123!',
+            gen_salt ('bf', 12)
+        ),
+        'customer',
+        FALSE
+    ),
+    (
+        'U_CUST_04',
+        'hoangnam_studio',
+        'hoangnam@ecommerce.local',
+        crypt (
+            'Password123!',
+            gen_salt ('bf', 12)
+        ),
+        'customer',
+        FALSE
     ) ON CONFLICT (id) DO NOTHING;

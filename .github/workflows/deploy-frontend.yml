@@ -1,0 +1,65 @@
+name: CI/CD Frontend (Auto Build Check & Manual Push)
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/deploy-frontend.yml"
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  # Giai đoạn 1: CI tự động kiểm tra build TypeScript + Vite mỗi khi push
+  ci-build-frontend:
+    name: CI - Kiểm tra Build React/Vite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Dependencies & Build Vite Bundle
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run build
+
+  # Giai đoạn 2: CD chỉ chạy khi bạn bấm "Run workflow" thủ công
+  cd-push-frontend:
+    name: CD - Đóng gói & Push Frontend Image thủ công
+    needs: ci-build-frontend
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      CONTAINER_REGISTRY: ${{ secrets.CONTAINER_REGISTRY }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Login to Container Registry
+        if: env.CONTAINER_REGISTRY != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.CONTAINER_REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build & Push Frontend Docker Image (Nginx)
+        if: env.CONTAINER_REGISTRY != ''
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          build-args: |
+            VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
+            VITE_FAAS_URL=${{ secrets.VITE_FAAS_URL }}
+          tags: ${{ env.CONTAINER_REGISTRY }}/ecommerce-frontend:${{ github.sha }}

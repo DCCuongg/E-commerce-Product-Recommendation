@@ -1,0 +1,762 @@
+[
+  {
+    "id": "B00508JFE4",
+    "product_id": "B00508JFE4",
+    "frequently_bought_together": [
+      {
+        "product_id": "B00EIEYJEW",
+        "similarity_score": 0.1789,
+        "bundle_type": "accessory",
+        "rank": 1
+      },
+      {
+        "product_id": "B07Y9KLDV2",
+        "similarity_score": 0.1773,
+        "bundle_type": "accessory",
+        "rank": 2
+      },
+      {
+        "product_id": "B00OVW6I22",
+        "similarity_score": 0.1648,
+        "bundle_type": "accessory",
+        "rank": 3
+      },
+      {
+        "product_id": "B004Y6PY16",
+        "similarity_score": 0.1477,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B003PWYU3S",
+        "similarity_score": 0.1429,
+        "bundle_type": "co-purchase",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B000S5JGMU",
+    "product_id": "B000S5JGMU",
+    "frequently_bought_together": [
+      {
+        "product_id": "B004BZOF9M",
+        "similarity_score": 0.4461,
+        "bundle_type": "accessory",
+        "rank": 1
+      },
+      {
+        "product_id": "B000TNBFS4",
+        "similarity_score": 0.3531,
+        "bundle_type": "accessory",
+        "rank": 2
+      },
+      {
+        "product_id": "B0BFXNCQRJ",
+        "similarity_score": 0.3417,
+        "bundle_type": "accessory",
+        "rank": 3
+      },
+      {
+        "product_id": "B097DDB83D",
+        "similarity_score": 0.2553,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B07HSGS27X",
+        "similarity_score": 0.2008,
+        "bundle_type": "accessory",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B00B2HLWZW",
+    "product_id": "B00B2HLWZW",
+    "frequently_bought_together": [
+      {
+        "product_id": "B00YHYLK36",
+        "similarity_score": 0.2744,
+        "bundle_type": "accessory",
+        "rank": 1
+      },
+      {
+        "product_id": "B0043NSWUU",
+        "similarity_score": 0.2485,
+        "bundle_type": "accessory",
+        "rank": 2
+      },
+      {
+        "product_id": "B000ZLRL6A",
+        "similarity_score": 0.1835,
+        "bundle_type": "accessory",
+        "rank": 3
+      },
+      {
+        "product_id": "B0B5B5WYSR",
+        "similarity_score": 0.1604,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B09D331741",
+        "similarity_score": 0.1557,
+        "bundle_type": "accessory",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B0B89ZSYS7",
+    "product_id": "B0B89ZSYS7",
+    "frequently_bought_together": [
+      {
+        "product_id": "B08LPTSRNJ",
+        "similarity_score": 0.2205,
+        "bundle_type": "accessory",
+        "rank": 1
+      },
+      {
+        "product_id": "B0BLLDYSL7",
+        "similarity_score": 0.2134,
+        "bundle_type": "accessory",
+        "rank": 2
+      },
+      {
+        "product_id": "B0B6NG9S4C",
+        "similarity_score": 0.2083,
+        "bundle_type": "accessory",
+        "rank": 3
+      },
+      {
+        "product_id": "B001U1MGLY",
+        "similarity_score": 0.2056,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B00R57EXLI",
+        "similarity_score": 0.1988,
+        "bundle_type": "co-purchase",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B00HXKFQLI",
+    "product_id": "B00HXKFQLI",
+    "frequently_bought_together": [
+      {
+        "product_id": "B07GKS64YW",
+        "similarity_score": 0.4049,
+        "bundle_type": "co-purchase",
+        "rank": 1
+      },
+      {
+        "product_id": "B008BUL2CQ",
+        "similarity_score": 0.3956,
+        "bundle_type": "co-purchase",
+        "rank": 2
+      },
+      {
+        "product_id": "B07W7B8LDN",
+        "similarity_score": 0.3611,
+        "bundle_type": "co-purchase",
+        "rank": 3
+      },
+      {
+        "product_id": "B01GCRSUO2",
+        "similarity_score": 0.3571,
+        "bundle_type": "co-purchase",
+        "rank": 4
+      },
+      {
+        "product_id": "B003NVNQ18",
+        "similarity_score": 0.3219,
+        "bundle_type": "co-purchase",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B0891SBM1L",
+    "product_id": "B0891SBM1L",
+    "frequently_bought_together": [
+      {
+        "product_id": "B0BCXKVYJL",
+        "similarity_score": 0.5799,
+        "bundle_type": "accessory",
+        "rank": 1
+      },
+      {
+        "product_id": "B0193MFUUK",
+        "similarity_score": 0.3286,
+        "bundle_type": "accessory",
+        "rank": 2
+      },
+      {
+        "product_id": "B09KBZBBJ3",
+        "similarity_score": 0.3014,
+        "bundle_type": "accessory",
+        "rank": 3
+      },
+      {
+        "product_id": "B0BD3GJ8ZV",
+        "similarity_score": 0.269,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B07KRNWLVV",
+        "similarity_score": 0.2486,
+        "bundle_type": "accessory",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B08K8V4JCY",
+    "product_id": "B08K8V4JCY",
+    "frequently_bought_together": [
+      {
+        "product_id": "B0B154YB1X",
+        "similarity_score": 0.4879,
+        "bundle_type": "accessory",
+        "rank": 1
+      },
+      {
+        "product_id": "B09KB7VCFS",
+        "similarity_score": 0.459,
+        "bundle_type": "accessory",
+        "rank": 2
+      },
+      {
+        "product_id": "B096VQX78F",
+        "similarity_score": 0.4477,
+        "bundle_type": "accessory",
+        "rank": 3
+      },
+      {
+        "product_id": "B0BQY6DJV5",
+        "similarity_score": 0.2823,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B08HNCCWHP",
+        "similarity_score": 0.2645,
+        "bundle_type": "accessory",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B008CMVWOG",
+    "product_id": "B008CMVWOG",
+    "frequently_bought_together": [
+      {
+        "product_id": "B01N8THDCN",
+        "similarity_score": 0.2125,
+        "bundle_type": "co-purchase",
+        "rank": 1
+      },
+      {
+        "product_id": "B0BNCG9D83",
+        "similarity_score": 0.1957,
+        "bundle_type": "co-purchase",
+        "rank": 2
+      },
+      {
+        "product_id": "B000EENIJW",
+        "similarity_score": 0.1842,
+        "bundle_type": "accessory",
+        "rank": 3
+      },
+      {
+        "product_id": "B08B7VMZ9F",
+        "similarity_score": 0.1715,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B077D29X7N",
+        "similarity_score": 0.1595,
+        "bundle_type": "accessory",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B01HY530RS",
+    "product_id": "B01HY530RS",
+    "frequently_bought_together": [
+      {
+        "product_id": "B07RFLLGFJ",
+        "similarity_score": 0.2288,
+        "bundle_type": "co-purchase",
+        "rank": 1
+      },
+      {
+        "product_id": "B08BQJYNCQ",
+        "similarity_score": 0.2018,
+        "bundle_type": "co-purchase",
+        "rank": 2
+      },
+      {
+        "product_id": "B093348ZYQ",
+        "similarity_score": 0.1833,
+        "bundle_type": "co-purchase",
+        "rank": 3
+      },
+      {
+        "product_id": "B08B66S279",
+        "similarity_score": 0.153,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B08GKHGHWH",
+        "similarity_score": 0.1524,
+        "bundle_type": "accessory",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B01547ST2E",
+    "product_id": "B01547ST2E",
+    "frequently_bought_together": [
+      {
+        "product_id": "B0BVVDFW59",
+        "similarity_score": 0.5938,
+        "bundle_type": "co-purchase",
+        "rank": 1
+      },
+      {
+        "product_id": "B09D331741",
+        "similarity_score": 0.4734,
+        "bundle_type": "co-purchase",
+        "rank": 2
+      },
+      {
+        "product_id": "B0B5B5WYSR",
+        "similarity_score": 0.369,
+        "bundle_type": "accessory",
+        "rank": 3
+      },
+      {
+        "product_id": "B07MYL6LBM",
+        "similarity_score": 0.334,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B076F5W8Q5",
+        "similarity_score": 0.3242,
+        "bundle_type": "accessory",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B008XXQCCG",
+    "product_id": "B008XXQCCG",
+    "frequently_bought_together": [
+      {
+        "product_id": "B000OR48WA",
+        "similarity_score": 0.1764,
+        "bundle_type": "accessory",
+        "rank": 1
+      },
+      {
+        "product_id": "B0BD3GJ8ZV",
+        "similarity_score": 0.1192,
+        "bundle_type": "accessory",
+        "rank": 2
+      },
+      {
+        "product_id": "B0B7QF6JR5",
+        "similarity_score": 0.1109,
+        "bundle_type": "accessory",
+        "rank": 3
+      },
+      {
+        "product_id": "B0BH3GJ3ML",
+        "similarity_score": 0.1104,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B07JNNN8FM",
+        "similarity_score": 0.108,
+        "bundle_type": "accessory",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B006O64JMY",
+    "product_id": "B006O64JMY",
+    "frequently_bought_together": [
+      {
+        "product_id": "B06XCB3YHT",
+        "similarity_score": 0.512,
+        "bundle_type": "co-purchase",
+        "rank": 1
+      },
+      {
+        "product_id": "B0BWPTCWM7",
+        "similarity_score": 0.4566,
+        "bundle_type": "co-purchase",
+        "rank": 2
+      },
+      {
+        "product_id": "B08GPH33QR",
+        "similarity_score": 0.404,
+        "bundle_type": "co-purchase",
+        "rank": 3
+      },
+      {
+        "product_id": "B0B7QF6JR5",
+        "similarity_score": 0.3805,
+        "bundle_type": "co-purchase",
+        "rank": 4
+      },
+      {
+        "product_id": "B076YQ2LXS",
+        "similarity_score": 0.3479,
+        "bundle_type": "accessory",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B075DDYYN3",
+    "product_id": "B075DDYYN3",
+    "frequently_bought_together": [
+      {
+        "product_id": "B08GQ6ZL78",
+        "similarity_score": 0.1844,
+        "bundle_type": "accessory",
+        "rank": 1
+      },
+      {
+        "product_id": "B0926LPVGT",
+        "similarity_score": 0.1703,
+        "bundle_type": "accessory",
+        "rank": 2
+      },
+      {
+        "product_id": "B011DOU83A",
+        "similarity_score": 0.1555,
+        "bundle_type": "accessory",
+        "rank": 3
+      },
+      {
+        "product_id": "B0025ZRZ9W",
+        "similarity_score": 0.1483,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B01KPOO73Q",
+        "similarity_score": 0.1211,
+        "bundle_type": "accessory",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B00O2C61W8",
+    "product_id": "B00O2C61W8",
+    "frequently_bought_together": [
+      {
+        "product_id": "B083W4D5HF",
+        "similarity_score": 0.1969,
+        "bundle_type": "accessory",
+        "rank": 1
+      },
+      {
+        "product_id": "B0BRT2Y55P",
+        "similarity_score": 0.1959,
+        "bundle_type": "accessory",
+        "rank": 2
+      },
+      {
+        "product_id": "B01GPXSGX8",
+        "similarity_score": 0.1812,
+        "bundle_type": "accessory",
+        "rank": 3
+      },
+      {
+        "product_id": "B00RO78XEW",
+        "similarity_score": 0.1779,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B01ABJCJJY",
+        "similarity_score": 0.172,
+        "bundle_type": "co-purchase",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B00502CTPW",
+    "product_id": "B00502CTPW",
+    "frequently_bought_together": [
+      {
+        "product_id": "B00HXKFQLI",
+        "similarity_score": 0.1763,
+        "bundle_type": "accessory",
+        "rank": 1
+      },
+      {
+        "product_id": "B000UDVDB2",
+        "similarity_score": 0.1651,
+        "bundle_type": "co-purchase",
+        "rank": 2
+      },
+      {
+        "product_id": "B0046TSNZK",
+        "similarity_score": 0.1479,
+        "bundle_type": "co-purchase",
+        "rank": 3
+      },
+      {
+        "product_id": "B0B6YNN8H9",
+        "similarity_score": 0.1423,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B0002GIV0I",
+        "similarity_score": 0.1388,
+        "bundle_type": "co-purchase",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B008SBSEEC",
+    "product_id": "B008SBSEEC",
+    "frequently_bought_together": [
+      {
+        "product_id": "B0057UBAAM",
+        "similarity_score": 0.7616,
+        "bundle_type": "co-purchase",
+        "rank": 1
+      },
+      {
+        "product_id": "B0002IHFHG",
+        "similarity_score": 0.6093,
+        "bundle_type": "accessory",
+        "rank": 2
+      },
+      {
+        "product_id": "B07QWZBKRQ",
+        "similarity_score": 0.4661,
+        "bundle_type": "accessory",
+        "rank": 3
+      },
+      {
+        "product_id": "B0046IRUXW",
+        "similarity_score": 0.3007,
+        "bundle_type": "co-purchase",
+        "rank": 4
+      },
+      {
+        "product_id": "B00JMNBVOA",
+        "similarity_score": 0.2988,
+        "bundle_type": "accessory",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B07KCW1FBS",
+    "product_id": "B07KCW1FBS",
+    "frequently_bought_together": [
+      {
+        "product_id": "B07QX912T2",
+        "similarity_score": 0.5305,
+        "bundle_type": "co-purchase",
+        "rank": 1
+      },
+      {
+        "product_id": "B07DP7BWMK",
+        "similarity_score": 0.4422,
+        "bundle_type": "accessory",
+        "rank": 2
+      },
+      {
+        "product_id": "B087JJ1JHX",
+        "similarity_score": 0.3312,
+        "bundle_type": "accessory",
+        "rank": 3
+      },
+      {
+        "product_id": "B00UL2YRZ6",
+        "similarity_score": 0.2527,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B00OVW6I22",
+        "similarity_score": 0.2341,
+        "bundle_type": "accessory",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B00FYK67FI",
+    "product_id": "B00FYK67FI",
+    "frequently_bought_together": [
+      {
+        "product_id": "B01M06DZFP",
+        "similarity_score": 0.2846,
+        "bundle_type": "co-purchase",
+        "rank": 1
+      },
+      {
+        "product_id": "B07Y9KLDV2",
+        "similarity_score": 0.2183,
+        "bundle_type": "co-purchase",
+        "rank": 2
+      },
+      {
+        "product_id": "B08KXXRFGP",
+        "similarity_score": 0.2004,
+        "bundle_type": "co-purchase",
+        "rank": 3
+      },
+      {
+        "product_id": "B06Y17SZ9Z",
+        "similarity_score": 0.1856,
+        "bundle_type": "co-purchase",
+        "rank": 4
+      },
+      {
+        "product_id": "B0002H07CW",
+        "similarity_score": 0.1833,
+        "bundle_type": "accessory",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B07RJQRTGW",
+    "product_id": "B07RJQRTGW",
+    "frequently_bought_together": [
+      {
+        "product_id": "B003R1ZMNY",
+        "similarity_score": 0.2395,
+        "bundle_type": "co-purchase",
+        "rank": 1
+      },
+      {
+        "product_id": "B07B9R77ZQ",
+        "similarity_score": 0.2174,
+        "bundle_type": "co-purchase",
+        "rank": 2
+      },
+      {
+        "product_id": "B01C3YXET4",
+        "similarity_score": 0.1896,
+        "bundle_type": "accessory",
+        "rank": 3
+      },
+      {
+        "product_id": "B00ENQOV0C",
+        "similarity_score": 0.1852,
+        "bundle_type": "accessory",
+        "rank": 4
+      },
+      {
+        "product_id": "B09STFCH3Q",
+        "similarity_score": 0.1789,
+        "bundle_type": "accessory",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "B0B8M5FJ9W",
+    "product_id": "B0B8M5FJ9W",
+    "frequently_bought_together": [
+      {
+        "product_id": "B004Y40G3E",
+        "similarity_score": 0.807,
+        "bundle_type": "accessory",
+        "rank": 1
+      },
+      {
+        "product_id": "B0B8LQFN3C",
+        "similarity_score": 0.5195,
+        "bundle_type": "co-purchase",
+        "rank": 2
+      },
+      {
+        "product_id": "B06ZYMDGW6",
+        "similarity_score": 0.4094,
+        "bundle_type": "co-purchase",
+        "rank": 3
+      },
+      {
+        "product_id": "B07CJYFJY6",
+        "similarity_score": 0.3401,
+        "bundle_type": "co-purchase",
+        "rank": 4
+      },
+      {
+        "product_id": "B07634L7P4",
+        "similarity_score": 0.2834,
+        "bundle_type": "co-purchase",
+        "rank": 5
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  }
+]

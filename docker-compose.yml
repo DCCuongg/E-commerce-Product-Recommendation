@@ -4,9 +4,9 @@ services:
     container_name: ecommerce_postgres_dev
     restart: always
     environment:
-      POSTGRES_DB: ecommerce_shop_db
-      POSTGRES_USER: postgres_admin
-      POSTGRES_PASSWORD: YourSecurePasswordHere123!
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce_shop_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-YourSecurePasswordHere123!}
     ports:
       - "5432:5432"
     volumes:
@@ -14,13 +14,14 @@ services:
       - ./scripts/sql/01_init_auth_db.sql:/docker-entrypoint-initdb.d/01_init_auth_db.sql:ro
       - ./scripts/sql/02_init_order_db.sql:/docker-entrypoint-initdb.d/02_init_order_db.sql:ro
       - ./scripts/sql/03_seed_auth.sql:/docker-entrypoint-initdb.d/03_seed_auth.sql:ro
-      # Sửa đường dẫn trỏ đúng vào scripts/sql/seed_products.sql
       - ./scripts/sql/seed_products.sql:/docker-entrypoint-initdb.d/04_seed_products.sql:ro
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres_admin -d ecommerce_shop_db" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres_admin} -d ${POSTGRES_DB:-ecommerce_shop_db}" ]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - ecommerce_net
 
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:latest
@@ -31,6 +32,8 @@ services:
       - "10000:10000"
     volumes:
       - azurite_data:/data
+    networks:
+      - ecommerce_net
 
   cosmos-emulator:
     image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-preview
@@ -43,8 +46,181 @@ services:
       - "8081:8081"
     volumes:
       - cosmos_data:/tmp/cosmos/appdata
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:8081/ || bash -c 'exec 3<>/dev/tcp/127.0.0.1/8081' || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - ecommerce_net
+
+  auth-service:
+    build:
+      context: ./services/auth_service
+      dockerfile: Dockerfile
+    container_name: ecommerce_auth_service
+    restart: on-failure
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce_shop_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-YourSecurePasswordHere123!}
+      POSTGRES_SSL_MODE: disable
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-ecommerce-recommender-super-secret-jwt-key-2026}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ecommerce_net
+
+  order-service:
+    build:
+      context: ./services/order_service
+      dockerfile: Dockerfile
+    container_name: ecommerce_order_service
+    restart: on-failure
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce_shop_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-YourSecurePasswordHere123!}
+      POSTGRES_SSL_MODE: disable
+      AUTH_SERVICE_URL: http://auth-service:8001
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-ecommerce-recommender-super-secret-jwt-key-2026}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-dev-payment-webhook-secret-2026}
+      PAYMENT_EXPIRE_MINUTES: ${PAYMENT_EXPIRE_MINUTES:-15}
+      ALLOW_DEV_X_USER_ID: ${ALLOW_DEV_X_USER_ID:-true}
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+    networks:
+      - ecommerce_net
+
+  system-data-init:
+    build:
+      context: .
+      dockerfile: services/recommender_service/Dockerfile
+    container_name: ecommerce_system_data_init
+    restart: "no"
+    command: [ "python", "/app/scripts/init_system_data.py" ]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce_shop_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-YourSecurePasswordHere123!}
+      POSTGRES_SSL_MODE: disable
+      AUTH_SERVICE_URL: http://auth-service:8001
+      COSMOS_DB_ENDPOINT: http://cosmos-emulator:8081/
+      COSMOS_DB_PRIMARY_KEY: ${COSMOS_DB_PRIMARY_KEY:-C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==}
+      COSMOS_DB_DATABASE_NAME: ${COSMOS_DB_DATABASE_NAME:-ecommerce_recommender_db}
+      COSMOS_CONTAINER_USER_RECS: ${COSMOS_CONTAINER_USER_RECS:-user_recommendations}
+      COSMOS_CONTAINER_ITEM_RECS: ${COSMOS_CONTAINER_ITEM_RECS:-item_recommendations}
+      COSMOS_CONTAINER_METADATA: ${COSMOS_CONTAINER_METADATA:-system_metadata}
+      COSMOS_SSL_VERIFY: "false"
+      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+      BLOB_CONTAINER_INTERACTION_LOGS: interaction-logs
+      HF_DATASET_REPO: ${HF_DATASET_REPO:-cuongduongok/amazon-musical-instruments-clean}
+      HF_MODEL_REPO: ${HF_MODEL_REPO:-cuongduongok/amazon-musical-recommender-models}
+      MODEL_VERSION: ${MODEL_VERSION:-v1.0-svd}
+      COSMOS_SEED_MAX_ITEMS: ${COSMOS_SEED_MAX_ITEMS:-500}
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+      azurite:
+        condition: service_started
+      cosmos-emulator:
+        condition: service_healthy
+    networks:
+      - ecommerce_net
+
+  recommender-service:
+    build:
+      context: .
+      dockerfile: services/recommender_service/Dockerfile
+    container_name: ecommerce_recommender_service
+    restart: on-failure
+    environment:
+      DEPLOYMENT_SLOT: blue
+      MODEL_VERSION: ${MODEL_VERSION:-v1.0-svd}
+      AUTH_SERVICE_URL: http://auth-service:8001
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-ecommerce-recommender-super-secret-jwt-key-2026}
+      COSMOS_DB_ENDPOINT: http://cosmos-emulator:8081/
+      COSMOS_DB_PRIMARY_KEY: ${COSMOS_DB_PRIMARY_KEY:-C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==}
+      COSMOS_DB_DATABASE_NAME: ${COSMOS_DB_DATABASE_NAME:-ecommerce_recommender_db}
+      COSMOS_CONTAINER_USER_RECS: ${COSMOS_CONTAINER_USER_RECS:-user_recommendations}
+      COSMOS_CONTAINER_ITEM_RECS: ${COSMOS_CONTAINER_ITEM_RECS:-item_recommendations}
+      COSMOS_CONTAINER_METADATA: ${COSMOS_CONTAINER_METADATA:-system_metadata}
+      COSMOS_SSL_VERIFY: "false"
+      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+    ports:
+      - "8003:8003"
+    depends_on:
+      azurite:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      cosmos-emulator:
+        condition: service_healthy
+      system-data-init:
+        condition: service_completed_successfully
+    networks:
+      - ecommerce_net
+
+  faas-logger:
+    build:
+      context: .
+      dockerfile: azure_functions/Dockerfile
+    container_name: ecommerce_faas_logger
+    restart: on-failure
+    environment:
+      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+      BLOB_CONTAINER_INTERACTION_LOGS: interaction-logs
+    ports:
+      - "7071:7071"
+    depends_on:
+      azurite:
+        condition: service_started
+    networks:
+      - ecommerce_net
+
+  frontend:
+    profiles: [ "fe" ]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ecommerce_frontend
+    restart: on-failure
+    ports:
+      - "3000:80"
+    depends_on:
+      - auth-service
+      - order-service
+      - recommender-service
+      - faas-logger
+    networks:
+      - ecommerce_net
 
 volumes:
   postgres_data:
   azurite_data:
   cosmos_data:
+
+
+networks:
+  ecommerce_net:
+    driver: bridge

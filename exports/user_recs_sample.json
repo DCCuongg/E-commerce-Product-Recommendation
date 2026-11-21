@@ -1,0 +1,118 @@
+[
+  {
+    "id": "U_E3D8E5EFF5",
+    "user_id": "U_E3D8E5EFF5",
+    "recommendations": [
+      {
+        "product_id": "B0B5TNNQ5L",
+        "score": 0.0,
+        "rank": 1
+      },
+      {
+        "product_id": "B00FYK67FI",
+        "score": 0.0,
+        "rank": 2
+      },
+      {
+        "product_id": "B07RJQRTGW",
+        "score": 0.0,
+        "rank": 3
+      },
+      {
+        "product_id": "B07F2NKTBD",
+        "score": 0.0,
+        "rank": 4
+      },
+      {
+        "product_id": "B000S5JGMU",
+        "score": 0.0,
+        "rank": 5
+      },
+      {
+        "product_id": "B00S6FLP32",
+        "score": 0.0,
+        "rank": 6
+      },
+      {
+        "product_id": "B00I03OF6Y",
+        "score": 0.0,
+        "rank": 7
+      },
+      {
+        "product_id": "B08LTGWCVX",
+        "score": 0.0,
+        "rank": 8
+      },
+      {
+        "product_id": "B0BKNY1KR5",
+        "score": 0.0,
+        "rank": 9
+      },
+      {
+        "product_id": "B00A2GZFZC",
+        "score": 0.0,
+        "rank": 10
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  },
+  {
+    "id": "U_TEST_01",
+    "user_id": "U_TEST_01",
+    "recommendations": [
+      {
+        "product_id": "B00508JFE4",
+        "score": 0.0,
+        "rank": 1
+      },
+      {
+        "product_id": "B08B3QXH2J",
+        "score": 0.0,
+        "rank": 2
+      },
+      {
+        "product_id": "B008SBSEEC",
+        "score": 0.0,
+        "rank": 3
+      },
+      {
+        "product_id": "B07F2NKTBD",
+        "score": 0.0,
+        "rank": 4
+      },
+      {
+        "product_id": "B08LTGWCVX",
+        "score": 0.0,
+        "rank": 5
+      },
+      {
+        "product_id": "B06X9YBVXS",
+        "score": 0.0,
+        "rank": 6
+      },
+      {
+        "product_id": "B00I03OF6Y",
+        "score": 0.0,
+        "rank": 7
+      },
+      {
+        "product_id": "B0BKNY1KR5",
+        "score": 0.0,
+        "rank": 8
+      },
+      {
+        "product_id": "B00A2GZFZC",
+        "score": 0.0,
+        "rank": 9
+      },
+      {
+        "product_id": "B08D39B6K4",
+        "score": 0.0,
+        "rank": 10
+      }
+    ],
+    "model_version": "v2.0-svd",
+    "updated_at": "2026-11-21T12:59:02.616559+00:00"
+  }
+]

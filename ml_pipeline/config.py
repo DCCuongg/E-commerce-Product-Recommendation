@@ -23,11 +23,16 @@ class Config:
 
     PROCESSED_PRODUCTS_PARQUET: Path = PROCESSED_DATA_DIR / "clean_products.parquet"
     PROCESSED_INTERACTIONS_PARQUET: Path = PROCESSED_DATA_DIR / "clean_interactions.parquet"
+
+    # Fallback tương thích với file tải từ Hugging Face trong init_azure_storage.py
+    HF_PRODUCTS_PARQUET: Path = PROCESSED_DATA_DIR / "training_products.parquet"
+    HF_INTERACTIONS_PARQUET: Path = PROCESSED_DATA_DIR / "training_interactions.parquet"
+
     ITEM_SIMILARITY_PATH: Path = MODELS_DIR / "item_similarity.npz"
     SVD_MODEL_PATH: Path = MODELS_DIR / "svd_recommender.pkl"
 
     # --------------------------------------------------------------------------
-    # 2. CẤU HÌNH POSTGRESQL (NGUỒN DỮ LIỆU CHÍNH CHO PRODUCTS VÀ ORDERS/REVIEWS)
+    # 2. CẤU HÌNH POSTGRESQL
     # --------------------------------------------------------------------------
     POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
     POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5432"))
@@ -63,18 +68,25 @@ class Config:
     COSMOS_CONTAINER_ITEM_RECS: str = os.getenv("COSMOS_CONTAINER_ITEM_RECS", "item_recommendations")
     COSMOS_CONTAINER_METADATA: str = os.getenv("COSMOS_CONTAINER_METADATA", "system_metadata")
     COSMOS_THROUGHPUT: int = int(os.getenv("COSMOS_DATABASE_THROUGHPUT", "400"))
+    COSMOS_SSL_VERIFY: bool = os.getenv("COSMOS_SSL_VERIFY", "false").lower() == "true"
 
     # --------------------------------------------------------------------------
-    # 5. SIÊU THAM SỐ HUẤN LUYỆN ML
+    # 5. SIÊU THAM SỐ HUẤN LUYỆN ML & CHÍNH SÁCH LỌC DỮ LIỆU
     # --------------------------------------------------------------------------
+    MODEL_VERSION: str = os.getenv("MODEL_VERSION", "v1.0-svd")
     ML_TARGET_CATEGORY: str = os.getenv("ML_TARGET_CATEGORY", "Musical_Instruments")
-    ML_NUM_PRODUCTS: int = int(os.getenv("ML_NUM_PRODUCTS", "1000"))
-    ML_NUM_INTERACTIONS: int = int(os.getenv("ML_NUM_INTERACTIONS", "5000"))
     ML_SVD_FACTORS: int = int(os.getenv("ML_SVD_FACTORS", "20"))
     ML_TOP_K_RECOMMENDATIONS: int = int(os.getenv("ML_TOP_K_RECOMMENDATIONS", "10"))
     ML_RANDOM_STATE: int = int(os.getenv("ML_RANDOM_STATE", "42"))
     TOP_K_BUNDLES: int = 5
-    HYBRID_ALPHA: float = 0.7
+    HYBRID_ALPHA: float = float(os.getenv("HYBRID_ALPHA", "0.7"))
+
+    # Ngưỡng lọc giảm độ thưa ma trận (Rubric 3.2)
+    MIN_USER_INTERACTIONS: int = int(os.getenv("MIN_USER_INTERACTIONS", "3"))
+    MIN_ITEM_INTERACTIONS: int = int(os.getenv("MIN_ITEM_INTERACTIONS", "2"))
+    # Chính sách kích hoạt Retrain định kỳ & ngưỡng dữ liệu tối thiểu
+    MIN_INTERACTIONS_TO_TRAIN: int = int(os.getenv("MIN_INTERACTIONS_TO_TRAIN", "100"))
+    RETRAIN_COOLDOWN_SECONDS: int = int(os.getenv("RETRAIN_COOLDOWN_SECONDS", str(7 * 24 * 3600)))  # 604800s = 1 tuần
 
     @classmethod
     def ensure_directories(cls):

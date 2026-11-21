@@ -1,4 +1,5 @@
 # Multi-stage Dockerfile cho Auth Service (Port 8001)
+# Build context: ./services/auth_service
 FROM python:3.11-slim AS builder
 
 WORKDIR /build

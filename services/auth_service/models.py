@@ -1,17 +1,17 @@
 """
 services/auth_service/models.py
 Định nghĩa ORM Models (SQLAlchemy) cho bảng `users` trong PostgreSQL
-và các Pydantic Schemas cho Request / Response của Auth Service.
+và các Pydantic Schemas cho Request / Response của Auth Service & Admin Users API.
 """
 
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import Column, DateTime, String, create_engine, func
+from sqlalchemy import Boolean, Column, DateTime, String, Text, create_engine, func
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # Nạp biến môi trường từ thư mục gốc dự án
@@ -64,6 +64,11 @@ class User(Base):
     email = Column(String(100), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(20), nullable=False, default="customer")
+    is_disabled = Column(
+        Boolean, nullable=False, default=False, server_default="false", index=True
+    )
+    disabled_at = Column(DateTime(timezone=True), nullable=True)
+    disabled_reason = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -100,10 +105,56 @@ class UserResponse(BaseModel):
     username: str
     email: str
     role: str
+    is_disabled: bool = False
     created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+
+class AdminUserResponse(BaseModel):
+    id: str
+    username: str
+    email: str
+    role: str
+    is_disabled: bool = False
+    disabled_at: Optional[datetime] = None
+    disabled_reason: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    order_count: int = 0
+    review_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class AdminUserListResponse(BaseModel):
+    items: List[AdminUserResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class UpdateUserStatusRequest(BaseModel):
+    is_disabled: bool = Field(
+        default=True,
+        description="True để vô hiệu hóa tài khoản, False để mở khóa lại.",
+    )
+    reason: Optional[str] = Field(
+        default=None,
+        max_length=500,
+        description="Lý do vô hiệu hóa tài khoản (lưu vết kiểm toán).",
+    )
+
+
+class UpdateUserRoleRequest(BaseModel):
+    role: str = Field(
+        ...,
+        pattern="^(customer|admin)$",
+        description="Vai trò mới: 'customer' hoặc 'admin'.",
+    )
 
 
 class AuthTokenResponse(BaseModel):
