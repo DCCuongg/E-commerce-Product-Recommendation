@@ -1,0 +1,11 @@
+cat << 'EOF' > .dockerignore
+.venv
+.git
+__pycache__
+*.pyc
+data/
+notebooks/
+exports/
+EOF
+
+docker compose up -d --build recommender-service

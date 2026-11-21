@@ -112,9 +112,13 @@ def verify_authenticated_user(
                 if data.get("valid") and data.get("user_id"):
                     return data
             elif resp.status_code in (401, 403):
+                try:
+                    err_detail = resp.json().get("detail", "Token không hợp lệ từ Auth Service.")
+                except ValueError:
+                    err_detail = "Token không hợp lệ từ Auth Service."
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail=resp.json().get("detail", "Token không hợp lệ từ Auth Service."),
+                    detail=err_detail,
                 )
         except HTTPException:
             raise

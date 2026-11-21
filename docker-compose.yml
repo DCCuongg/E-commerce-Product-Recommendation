@@ -134,6 +134,7 @@ services:
       - ecommerce_net
 
   frontend:
+    profiles: [ "fe" ]
     build:
       context: ./frontend
       dockerfile: Dockerfile

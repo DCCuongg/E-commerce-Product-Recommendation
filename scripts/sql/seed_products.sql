@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS products (
         TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+\set QUIET on
+\echo '>>> [INIT DB] Dang chay file seed_products.sql...'
+
 INSERT INTO
     products (
         id,
@@ -20010,3 +20013,7 @@ VALUES (
         100,
         'The Gator Cases GR Series rack cases are manufactured to withstand the rigors of the road! Made with a lightweight polyethylene frame and sturdy aluminum valiance; these cases will protect your rack gear from the damage and destruction that can occur in between gigs! The GR Series rack cases 19.25” rack-able depth is design to hold both, shallow and deep sitting gear. The recessed carry handles are design to provide comfort while moving your gear around. The Gator Cases GR series rack case also '
     ) ON CONFLICT (id) DO NOTHING;
+
+\set QUIET off
+\echo '>>> [INIT DB] Hoan tat seed_products.sql! Tong so ban ghi:'
+SELECT COUNT(*) AS total_rows FROM products;

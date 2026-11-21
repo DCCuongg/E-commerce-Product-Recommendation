@@ -9,6 +9,7 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -42,16 +43,21 @@ POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres_admin")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "YourSecurePasswordHere123!")
 POSTGRES_SSL_MODE = os.getenv("POSTGRES_SSL_MODE", "disable")
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}"
-    f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}?sslmode={POSTGRES_SSL_MODE}",
-)
+RAW_DATABASE_URL = os.getenv("DATABASE_URL")
+if RAW_DATABASE_URL:
+    DATABASE_URL = RAW_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+else:
+    DATABASE_URL = (
+        f"postgresql+psycopg2://{quote_plus(POSTGRES_USER)}:{quote_plus(POSTGRES_PASSWORD)}"
+        f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}?sslmode={POSTGRES_SSL_MODE}"
+    )
 
 engine = create_engine(
     DATABASE_URL,
-    pool_size=15,
-    max_overflow=30,
+    pool_size=5,
+    max_overflow=10,
+    pool_timeout=30,
+    pool_recycle=1800,
     pool_pre_ping=True,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
