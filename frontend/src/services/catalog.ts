@@ -96,3 +96,84 @@ export function formatVND(value: number): string {
 export function productImage(product: Product): string {
   return product.thumb_url || product.thumbnail_url || product.image_url || product.hi_res_url || '/assets/instrument-placeholder.svg';
 }
+
+export type RecommendationMeta = {
+  strategy?: string;
+  data_source?: string;
+  model_version?: string;
+  deployment_slot?: string;
+  latency_ms?: number;
+};
+
+export type FrequentlyBoughtResult = {
+  items: Product[];
+  meta: RecommendationMeta | null;
+};
+
+export async function getFrequentlyBoughtTogether(
+  productId: string,
+  count = 4,
+): Promise<FrequentlyBoughtResult> {
+  if (DEMO_MODE) {
+    return {
+      items: demoProducts.filter((p) => p.id !== productId).slice(0, count),
+      meta: {
+        strategy: 'item_similarity_demo',
+        data_source: 'cosmos_db',
+        model_version: 'v1.0-svd',
+        deployment_slot: 'blue',
+        latency_ms: 2.1,
+      },
+    };
+  }
+
+  const response = await fetch(
+    `${RECS_BASE}/api/v1/products/${encodeURIComponent(productId)}/frequently-bought-together?top_k=${count}`,
+  );
+  if (!response.ok) throw new Error('Related recommendations are unavailable.');
+
+  const payload = (await response.json()) as RecommendationMeta & {
+    recommendations?: Array<Partial<Product> & { product_id?: string; id?: string }>;
+  };
+
+  const recs = payload.recommendations || [];
+  const meta: RecommendationMeta = {
+    strategy: payload.strategy,
+    data_source: payload.data_source,
+    model_version: payload.model_version,
+    deployment_slot: payload.deployment_slot,
+    latency_ms: payload.latency_ms,
+  };
+
+  if (!recs.length) return { items: [], meta };
+
+  const hasFullInfo = recs.every((r) => Boolean(r.name) && typeof r.price === 'number');
+  if (hasFullInfo) {
+    const items: Product[] = recs.map((r) => ({
+      id: r.product_id || r.id || '',
+      product_id: r.product_id || r.id,
+      name: r.name || 'Instrument',
+      category: r.category ?? null,
+      price: r.price ?? 0,
+      image_url: r.thumbnail_url || r.image_url || null,
+      thumbnail_url: r.thumbnail_url ?? null,
+      thumb_url: r.thumb_url ?? null,
+      stock_quantity: r.stock_quantity ?? 0,
+      rating: r.rating,
+      rating_count: r.rating_count,
+    }));
+    return { items: items.filter((item) => Boolean(item.id)), meta };
+  }
+
+  const ids = recs.map((r) => r.product_id || r.id).filter((v): v is string => Boolean(v));
+  if (!ids.length) return { items: [], meta };
+
+  const batch = await fetch(`${API_BASE}/api/v1/products/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ product_ids: ids }),
+  });
+  if (!batch.ok) throw new Error('Related products could not be loaded.');
+
+  return { items: (await batch.json()) as Product[], meta };
+}
