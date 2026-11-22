@@ -191,7 +191,7 @@ def verify_and_seed_postgres():
             dbname=os.getenv("POSTGRES_DB", "ecommerce_shop_db"),
             user=os.getenv("POSTGRES_USER", "postgres_admin"),
             password=os.getenv("POSTGRES_PASSWORD", "YourSecurePasswordHere123!"),
-            sslmode="disable"
+            sslmode=os.getenv("POSTGRES_SSL_MODE", "require")
         )
         conn.autocommit = True
         cursor = conn.cursor()

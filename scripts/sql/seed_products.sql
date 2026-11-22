@@ -21,8 +21,8 @@ ALTER TABLE products
     ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE,
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
 
-\set QUIET on
-\echo '>>> [INIT DB] Dang chay file seed_products.sql (Multi-Resolution Images)...'
+-- \set QUIET on
+-- \echo '>>> [INIT DB] Dang chay file seed_products.sql (Multi-Resolution Images)...'
 
 INSERT INTO products (id, name, category, price, image_url, hi_res_url, large_urls, thumb_url, stock_quantity, description) VALUES ('B01M4HO6RK', 'Pearl Export Lacquer EXL725S/C249 5-Piece New Fusion Drum Set with Hardware, Honey Amber', 'Drum Sets', 32.34, 'https://stecomrecsysdev.blob.core.windows.net/product-images/B01M4HO6RK/hi_res.jpg', 'https://stecomrecsysdev.blob.core.windows.net/product-images/B01M4HO6RK/hi_res.jpg', '["https://stecomrecsysdev.blob.core.windows.net/product-images/B01M4HO6RK/large_0.jpg", "https://stecomrecsysdev.blob.core.windows.net/product-images/B01M4HO6RK/large_1.jpg", "https://stecomrecsysdev.blob.core.windows.net/product-images/B01M4HO6RK/large_2.jpg"]'::jsonb, 'https://stecomrecsysdev.blob.core.windows.net/product-images/B01M4HO6RK/thumb.jpg', 100, 'Introducing the best selling drum set of all time... Export Series returns and this time with a lacquer finish. EXL Export Lacquer Series incorporates Pearl''s S.S.T. Superior Shell Technology, Opti-Loc tom mounts, all-new 830 Series Hardware with a P-930 Pedal, and a choice of three amazing stocking finishes.') ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, category = EXCLUDED.category, price = EXCLUDED.price, image_url = EXCLUDED.image_url, hi_res_url = EXCLUDED.hi_res_url, large_urls = EXCLUDED.large_urls, thumb_url = EXCLUDED.thumb_url, description = EXCLUDED.description, updated_at = CURRENT_TIMESTAMP;
 

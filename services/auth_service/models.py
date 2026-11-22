@@ -8,6 +8,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, EmailStr, Field
@@ -30,7 +31,7 @@ POSTGRES_SSL_MODE = os.getenv("POSTGRES_SSL_MODE", "disable")
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}"
+    f"postgresql+psycopg2://{quote_plus(POSTGRES_USER)}:{quote_plus(POSTGRES_PASSWORD)}",
     f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}?sslmode={POSTGRES_SSL_MODE}",
 )
 

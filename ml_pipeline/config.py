@@ -6,6 +6,7 @@ Quản lý cấu hình kết nối PostgreSQL, Azure Blob Storage, Azure Cosmos 
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from urllib.parse import quote_plus
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=BASE_DIR / ".env")
@@ -44,7 +45,7 @@ class Config:
     @classmethod
     def get_postgres_uri(cls) -> str:
         return (
-            f"postgresql+psycopg2://{cls.POSTGRES_USER}:{cls.POSTGRES_PASSWORD}"
+            f"postgresql+psycopg2://{quote_plus(cls.POSTGRES_USER)}:{quote_plus(cls.POSTGRES_PASSWORD)}"
             f"@{cls.POSTGRES_HOST}:{cls.POSTGRES_PORT}/{cls.POSTGRES_DB}"
             f"?sslmode={cls.POSTGRES_SSL_MODE}"
         )
