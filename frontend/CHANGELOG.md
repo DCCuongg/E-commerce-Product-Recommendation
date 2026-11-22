@@ -14,3 +14,12 @@
 ## Known backend constraints
 
 Profile updating, notifications, shipping details, payment method, and checkout/payment completion require further backend work. No false data is sent to Azure. See README for integration instructions and security considerations.
+
+
+## v7 — Frontend report corrections
+- Search: name-only matching, exact/prefix ranking, and full filtered pagination across backend pages.
+- My Purchases: fixed search icon/placeholder overlap.
+- Integrated saved English/Vietnamese and dark/light preferences from v6 into the branch with Checkout and Buy Now.
+- Higher-resolution Azure product imagery with aspect-ratio preservation and image URL fallbacks.
+- Removed checkout's yellow developer test panel from ordinary UI (opt-in via environment variable).
+- Documented backend gaps and preserved checkout, existing account routes, and Azure deployment files.

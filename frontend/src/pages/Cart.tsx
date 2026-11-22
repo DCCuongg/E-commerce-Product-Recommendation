@@ -1,3 +1,4 @@
+import { Tr, usePreferences } from '../context/PreferencesContext';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react';
@@ -7,6 +8,7 @@ import { formatVND } from '../services/catalog';
 import { useAuth } from '../context/AuthContext';
 
 export default function Cart() {
+  const { t } = usePreferences();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [cart, setCart] = useState<CartType | null>(null);
@@ -59,16 +61,14 @@ export default function Cart() {
   );
 
   return (
-    <div className="min-h-screen bg-[#faf9f6]">
+    <div className="min-h-screen bg-[#faf9f6] dark:bg-[#0b1322] dark:text-slate-100">
       <StoreHeader />
       <main className="mx-auto max-w-[1180px] px-5 py-12 sm:px-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[11px] font-extrabold uppercase tracking-[.22em] text-indigo-600">Your selection</p>
-            <h1 className="mt-3 font-['Georgia',serif] text-[43px] tracking-[-.05em] sm:text-[60px]">
-              Shopping bag.
-            </h1>
-            <p className="mt-2 text-sm text-slate-500">Review the instruments you've selected.</p>
+            <p className="text-[11px] font-extrabold uppercase tracking-[.22em] text-indigo-600"><Tr text={'Your selection'}/></p>
+            <h1 className="mt-3 font-['Georgia',serif] text-[43px] tracking-[-.05em] sm:text-[60px]"><Tr text={'Shopping bag.'}/></h1>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400"><Tr text={"Review the instruments you've selected."}/></p>
           </div>
 
           {cart && cart.items.length > 0 && (
@@ -76,31 +76,29 @@ export default function Cart() {
               type="button"
               disabled={busy}
               onClick={onClear}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 transition hover:border-red-200 hover:text-red-600 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-red-200 hover:text-red-600 disabled:opacity-50"
             >
-              <Trash2 size={14} /> Clear bag
-            </button>
+              <Trash2 size={14} /><Tr text={'Clear bag'}/></button>
           )}
         </div>
 
         {error && (
-          <p className="mt-7 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
-            {error}
+          <p className="mt-7 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-4 text-sm text-red-700 dark:text-red-300" role="alert">
+            {t(error)}
           </p>
         )}
 
         {!cart ? (
-          <div className="my-12 h-40 animate-pulse rounded-2xl bg-white" />
+          <div className="my-12 h-40 animate-pulse rounded-2xl bg-white dark:bg-slate-900" />
         ) : cart.items.length === 0 ? (
-          <div className="my-12 rounded-3xl bg-white p-12 text-center">
+          <div className="my-12 rounded-3xl bg-white dark:bg-slate-900 p-12 text-center">
             <ShoppingBag className="mx-auto text-indigo-500" size={38} />
-            <h2 className="mt-4 text-xl font-bold">Your bag is empty.</h2>
-            <p className="mt-2 text-sm text-slate-500">Your next favorite instrument is waiting.</p>
+            <h2 className="mt-4 text-xl font-bold"><Tr text={'Your bag is empty.'}/></h2>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400"><Tr text={'Your next favorite instrument is waiting.'}/></p>
             <Link
               to="/shop"
               className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#263247] px-7 py-3 text-sm font-bold text-white"
-            >
-              Explore instruments <ArrowRight size={17} />
+            ><Tr text={'Explore instruments'}/><ArrowRight size={17} />
             </Link>
           </div>
         ) : (
@@ -111,11 +109,11 @@ export default function Cart() {
                 return (
                   <div
                     key={item.product_id}
-                    className="flex flex-wrap items-center gap-5 rounded-2xl border border-[#eeebe5] bg-white p-5 sm:flex-nowrap"
+                    className="flex flex-wrap items-center gap-5 rounded-2xl border border-[#eeebe5] dark:border-slate-700 bg-white dark:bg-slate-900 p-5 sm:flex-nowrap"
                   >
                     <Link
                       to={`/products/${encodeURIComponent(item.product_id)}`}
-                      className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-[#f4f1ea]"
+                      className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-[#f4f1ea] dark:bg-slate-800"
                     >
                       <img
                         src={item.thumb_url || item.image_url || '/assets/instrument-placeholder.svg'}
@@ -135,12 +133,12 @@ export default function Cart() {
                       >
                         {item.product_name}
                       </Link>
-                      <p className="mt-2 text-sm font-extrabold text-slate-900">{formatVND(item.unit_price)}</p>
+                      <p className="mt-2 text-sm font-extrabold text-slate-900 dark:text-slate-100">{formatVND(item.unit_price)}</p>
                       {overStock && (
                         <p className="mt-1 text-xs font-semibold text-red-600">
                           {item.stock_quantity <= 0
-                            ? 'Out of stock'
-                            : `Only ${item.stock_quantity} left in stock`}
+                            ? t('Out of stock')
+                            : t('Only {count} left in stock',{count:item.stock_quantity})}
                         </p>
                       )}
                       <button
@@ -149,16 +147,15 @@ export default function Cart() {
                         onClick={() => change(item.product_id, 0)}
                         className="mt-2 inline-flex items-center gap-1 text-xs text-slate-400 hover:text-red-500"
                       >
-                        <Trash2 size={13} /> Remove
-                      </button>
+                        <Trash2 size={13} /><Tr text={'Remove'}/></button>
                     </div>
 
-                    <div className="flex items-center gap-2 rounded-full border border-slate-200 px-2 py-1">
+                    <div className="flex items-center gap-2 rounded-full border border-slate-200 dark:border-slate-700 px-2 py-1">
                       <button
                         type="button"
                         disabled={busy}
                         onClick={() => change(item.product_id, item.quantity - 1)}
-                        aria-label="Decrease quantity"
+                        aria-label={t("Decrease quantity")}
                         className="p-1"
                       >
                         <Minus size={15} />
@@ -168,7 +165,7 @@ export default function Cart() {
                         type="button"
                         disabled={busy || item.quantity >= item.stock_quantity}
                         onClick={() => change(item.product_id, item.quantity + 1)}
-                        aria-label="Increase quantity"
+                        aria-label={t("Increase quantity")}
                         className="p-1 disabled:opacity-40"
                       >
                         <Plus size={15} />
@@ -179,37 +176,32 @@ export default function Cart() {
               })}
             </section>
 
-            <aside className="rounded-2xl border border-[#eeebe5] bg-white p-7">
-              <h2 className="text-lg font-bold">Order summary</h2>
+            <aside className="rounded-2xl border border-[#eeebe5] dark:border-slate-700 bg-white dark:bg-slate-900 p-7">
+              <h2 className="text-lg font-bold"><Tr text={'Order summary'}/></h2>
               <div className="mt-6 flex justify-between text-sm">
-                <span className="text-slate-500">Items ({cart.total_quantity})</span>
+                <span className="text-slate-500 dark:text-slate-400">{t("Items")} ({cart.total_quantity})</span>
                 <span className="font-semibold">{formatVND(cart.total_amount)}</span>
               </div>
-              <div className="mt-5 border-t border-slate-100 pt-5">
+              <div className="mt-5 border-t border-slate-100 dark:border-slate-800 pt-5">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold">Subtotal</span>
+                  <span className="text-sm font-bold"><Tr text={'Subtotal'}/></span>
                   <span className="text-xl font-extrabold">{formatVND(cart.total_amount)}</span>
                 </div>
               </div>
-              <p className="mt-4 text-xs leading-6 text-slate-500">
-                Inventory is reserved securely when you confirm payment.
-              </p>
+              <p className="mt-4 text-xs leading-6 text-slate-500 dark:text-slate-400"><Tr text={'Inventory is reserved securely when you confirm payment.'}/></p>
 
               <button
                 type="button"
                 disabled={busy || hasStockIssue}
                 onClick={() => navigate('/checkout')}
                 className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#263247] px-5 py-3.5 text-sm font-bold text-white transition hover:bg-indigo-600 disabled:bg-slate-300"
-              >
-                Proceed to checkout <ArrowRight size={16} />
+              ><Tr text={'Proceed to checkout'}/><ArrowRight size={16} />
               </button>
 
               <Link
-                className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-slate-200 px-5 py-3 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+                className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 px-5 py-3 text-xs font-bold text-slate-600 dark:text-slate-300 transition hover:bg-slate-50 dark:hover:bg-slate-800"
                 to="/shop"
-              >
-                Continue shopping
-              </Link>
+              ><Tr text={'Continue shopping'}/></Link>
             </aside>
           </div>
         )}
