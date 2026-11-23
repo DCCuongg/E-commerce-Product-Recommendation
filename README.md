@@ -59,7 +59,7 @@ Gói Azure for Students cung cấp **100 USD credit** kèm các dịch vụ mi�
 | **Database NoSQL** | Azure Cosmos DB | API for NoSQL, Provisioned Throughput 400–1000 RU/s | **Bật chế độ Free Tier Discount** (miễn phí 1000 RU/s và 25 GB dung lượng trọn đời). |
 | **Database Relational (Auth/Cart)** | Azure Database for PostgreSQL (Flexible Server) | Burstable `Standard_B1ms` (1 vCPU, 2GB RAM, 32GB Storage) | Nằm trong gói miễn phí 12 tháng của Azure Student. |
 | **Object Storage & Public CDN** | Azure Blob Storage | Hot Tier, Locally Redundant Storage (LRS), Public Container `product-images` | 5GB LRS Block Blob miễn phí 12 tháng. Lưu dataset, interaction logs, model artifacts và 4.522 ảnh sản phẩm đa độ phân giải (`hi_res`, `large_0..2`, `thumb`). |
-| **Microservices & Model Serving** | Azure Kubernetes Service (AKS) | 1 System Node Pool: `Standard_B2s` (2 vCPU, 4GB RAM, Linux) | Master Node miễn phí; giới hạn RAM từng Pod (`384Mi–512Mi`) chống OOM; tự động scale slot Blue/Green không hoạt động về 0 replica. |
+| **Microservices & Model Serving** | Azure Kubernetes Service (AKS) | 1 System Node Pool: `Standard_D2as_v4 ` (2 vCPU, 4GB RAM, Linux) | Master Node miễn phí; giới hạn RAM từng Pod (`384Mi–512Mi`) chống OOM; tự động scale slot Blue/Green không hoạt động về 0 replica. |
 | **FaaS (Hàm phi máy chủ)** | Azure Functions | Consumption Plan (Linux, Python 3.11) | Miễn phí 1,000,000 requests/tháng và 400,000 GB-s/tháng. |
 | **Training & Image ETL Pipeline** | Local Machine / Google Colab (T4 GPU) | Export model artifacts lên Blob/Cosmos DB & ảnh đa độ phân giải lên Public Blob/HF | Không tốn credit Azure; giả lập đúng luồng Data Science VM. |
 
@@ -297,7 +297,7 @@ $$\hat{R} \approx P \times Q^T$$
 
 2. **Triển khai hệ thống Blue/Green Deployment (0.5đ):**
 
-* Tạo 2 Kubernetes Deployment riêng biệt trên AKS (`namespace: ecommerce-rec`): `recommender-deployment-blue` (`MODEL_VERSION=v1.0-svd`, mặc định `replicas: 1`) và `recommender-deployment-green` (`MODEL_VERSION=v2.0-svd`, mặc định `replicas: 0` để tiết kiệm RAM trên node `Standard_B2s`).
+* Tạo 2 Kubernetes Deployment riêng biệt trên AKS (`namespace: ecommerce-rec`): `recommender-deployment-blue` (`MODEL_VERSION=v1.0-svd`, mặc định `replicas: 1`) và `recommender-deployment-green` (`MODEL_VERSION=v2.0-svd`, mặc định `replicas: 0` để tiết kiệm RAM trên node `Standard_D2as_v4 `).
 * Sử dụng Kubernetes Service `k8s/recommender-service.yaml` làm Router:
 
 ```yaml

@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+import scipy.sparse as sp
 import urllib3
 from azure.cosmos import CosmosClient
 from dotenv import load_dotenv
@@ -87,7 +88,7 @@ class RecommenderCosmosClient:
 
         # In-memory artifacts & cache
         self.svd_data: Optional[Dict[str, Any]] = None
-        self.hybrid_sim: Optional[np.ndarray] = None
+        self.hybrid_sim: Any = None
         self.sim_item_ids: List[str] = []
         self.catalog_map: Dict[str, Dict[str, Any]] = {}
         self.popular_product_ids: List[str] = []
@@ -129,7 +130,7 @@ class RecommenderCosmosClient:
     # 2. ĐỒNG BỘ MODEL & CATALOG (AZURE BLOB -> LOCAL -> HUGGING FACE DEFAULT)
     # --------------------------------------------------------------------------
     def _sync_from_azure_blob(self, force: bool = False) -> bool:
-        """Kiểm tra và tải model mới nhất từ Azure Blob Storage (nếu ML Pipeline vừa cập nhật)."""
+        """Kiểm tra và tải model (và catalog nếu có) mới nhất từ Azure Blob Storage."""
         if _is_placeholder(self.blob_conn_str):
             return False
 
@@ -170,6 +171,12 @@ class RecommenderCosmosClient:
                 with open(self.manifest_path, "wb") as f:
                     f.write(manifest_blob.download_blob().readall())
 
+            # Nếu pipeline có đẩy kèm web_products.parquet lên Blob thì tải đồng bộ luôn
+            web_pq_blob = container.get_blob_client("web_products.parquet")
+            if web_pq_blob.exists() and (force or not self.web_parquet_path.exists()):
+                with open(self.web_parquet_path, "wb") as f:
+                    f.write(web_pq_blob.download_blob().readall())
+
             self._loaded_blob_mtime = remote_ts
             self.model_source = "azure_blob_latest"
             return True
@@ -178,11 +185,12 @@ class RecommenderCosmosClient:
             return False
 
     def _download_default_from_hf(self, force: bool = False) -> bool:
-        """Chính sách mặc định: Tải model & catalog chuẩn từ Hugging Face Hub."""
+        """Chính sách mặc định: Tải model & catalog chuẩn còn thiếu từ Hugging Face Hub."""
         try:
             from huggingface_hub import hf_hub_download
 
-            downloaded_any = False
+            downloaded_model = False
+            downloaded_catalog = False
 
             if force or not self.svd_path.exists():
                 logger.info(f"Đang tải svd_recommender.pkl mặc định từ Hugging Face ({self.hf_model_repo})...")
@@ -193,7 +201,7 @@ class RecommenderCosmosClient:
                     token=self.hf_token,
                 )
                 self.svd_path.write_bytes(Path(cached_svd).read_bytes())
-                downloaded_any = True
+                downloaded_model = True
 
             if force or not self.sim_path.exists():
                 logger.info(f"Đang tải item_similarity.npz mặc định từ Hugging Face ({self.hf_model_repo})...")
@@ -204,7 +212,7 @@ class RecommenderCosmosClient:
                     token=self.hf_token,
                 )
                 self.sim_path.write_bytes(Path(cached_sim).read_bytes())
-                downloaded_any = True
+                downloaded_model = True
 
             if force or (not self.web_parquet_path.exists() and not self.clean_parquet_path.exists()):
                 logger.info(f"Đang tải web_products.parquet mặc định từ Hugging Face ({self.hf_dataset_repo})...")
@@ -215,17 +223,17 @@ class RecommenderCosmosClient:
                     token=self.hf_token,
                 )
                 self.web_parquet_path.write_bytes(Path(cached_pq).read_bytes())
-                downloaded_any = True
+                downloaded_catalog = True
 
-            if downloaded_any:
+            if downloaded_model and self.model_source == "uninitialized":
                 self.model_source = "huggingface_default"
-            return downloaded_any
+            return downloaded_model or downloaded_catalog
         except Exception as exc:
             logger.error(f"Lỗi khi tải model/dataset từ Hugging Face: {exc}")
             return False
 
     def _load_catalog_to_ram(self):
-        """Nạp danh mục sản phẩm vào RAM từ file Parquet mới nhất (ETL local hoặc HF default)."""
+        """Nạp danh mục sản phẩm vào RAM từ file Parquet mới nhất (ETL local, Blob hoặc HF default)."""
         candidate_files = [self.clean_parquet_path, self.web_parquet_path]
         existing = [p for p in candidate_files if p.exists()]
         if not existing:
@@ -277,21 +285,39 @@ class RecommenderCosmosClient:
         logger.info(f"Đã nạp {len(self.catalog_map)} sản phẩm vào RAM từ {latest_pq.name}.")
 
     def _load_models_to_ram(self):
-        """Nạp trọng số SVD và ma trận Cosine Similarity vào RAM."""
+        """Nạp trọng số SVD và ma trận Cosine Similarity (sparse hoặc dense) vào RAM."""
         if self.svd_path.exists():
             with open(self.svd_path, "rb") as f:
                 self.svd_data = pickle.load(f)
             self._loaded_local_mtime = self.svd_path.stat().st_mtime
-            self.model_version = self.svd_data.get("model_version", self.model_version)
+            if isinstance(self.svd_data, dict):
+                self.model_version = self.svd_data.get("model_version", self.model_version)
+                item_to_idx = self.svd_data.get("item_to_idx") or self.svd_data.get("item2idx") or {}
+                if not item_to_idx and self.svd_data.get("item_ids") is not None:
+                    item_to_idx = {str(it): i for i, it in enumerate(self.svd_data["item_ids"])}
+                if item_to_idx:
+                    idx_to_item = {int(idx): str(pid) for pid, idx in item_to_idx.items()}
+                    self.sim_item_ids = [idx_to_item[i] for i in sorted(idx_to_item.keys())]
+                elif "idx2item" in self.svd_data:
+                    idx2item = self.svd_data["idx2item"]
+                    self.sim_item_ids = [str(idx2item[i]) for i in sorted(idx2item.keys())]
 
         if self.sim_path.exists():
-            sim_npz = np.load(self.sim_path, allow_pickle=True)
-            self.hybrid_sim = sim_npz["similarity"]
-            if "item_ids" in sim_npz:
-                self.sim_item_ids = [str(x) for x in sim_npz["item_ids"].tolist()]
-            elif self.svd_data and "idx2item" in self.svd_data:
-                idx2item = self.svd_data["idx2item"]
-                self.sim_item_ids = [str(idx2item[i]) for i in range(len(idx2item))]
+            try:
+                self.hybrid_sim = sp.load_npz(self.sim_path)
+            except Exception:
+                sim_npz = np.load(self.sim_path, allow_pickle=True)
+                for k in ("similarity", "sim_matrix", "matrix", "arr_0"):
+                    if k in sim_npz:
+                        self.hybrid_sim = sim_npz[k]
+                        break
+                if "item_ids" in sim_npz:
+                    self.sim_item_ids = [str(x) for x in sim_npz["item_ids"].tolist()]
+                elif "product_ids" in sim_npz:
+                    self.sim_item_ids = [str(x) for x in sim_npz["product_ids"].tolist()]
+
+        if not self.sim_item_ids and self.catalog_map:
+            self.sim_item_ids = list(self.catalog_map.keys())
 
         if self.manifest_path.exists():
             try:
@@ -314,19 +340,18 @@ class RecommenderCosmosClient:
             self._init_cosmos()
 
             # 1. Ưu tiên kiểm tra bản mới từ Azure Blob Storage
-            updated_from_blob = self._sync_from_azure_blob(force=force_download)
+            self._sync_from_azure_blob(force=force_download)
 
-            # 2. Mặc định tải từ Hugging Face nếu local/Blob chưa có model hoặc thiếu catalog
+            # 2. Tải bổ sung bất kỳ file model hoặc catalog nào còn thiếu từ Hugging Face
             need_hf_model = not self.svd_path.exists() or not self.sim_path.exists()
             need_hf_catalog = not self.web_parquet_path.exists() and not self.clean_parquet_path.exists()
-            if not updated_from_blob and (need_hf_model or need_hf_catalog):
+            if need_hf_model or need_hf_catalog:
                 self._download_default_from_hf(force=False)
 
             # 3. Nạp catalog & model vào RAM
             self._load_catalog_to_ram()
             self._load_models_to_ram()
 
-            # 4. Nếu Cosmos DB rỗng nhưng RAM đã có catalog, tự đồng bộ popular_items từ RAM
             self._cache.clear()
             self._last_checked_at = time.time()
 
@@ -351,22 +376,60 @@ class RecommenderCosmosClient:
                 self._load_models_to_ram()
                 self._cache.clear()
 
+    def invalidate_user_cache(self, user_id: str):
+        """Xóa cache gợi ý của user_id trên RAM khi Speed Layer vừa cập nhật Cosmos DB."""
+        prefix = f"user:{user_id}:"
+        with self._lock:
+            for k in [key for key in self._cache if key.startswith(prefix)]:
+                self._cache.pop(k, None)
+
     # --------------------------------------------------------------------------
     # 3. TRUY VẤN GỢI Ý (COSMOS DB O(1) + IN-MEMORY SVD/SIMILARITY FALLBACK)
     # --------------------------------------------------------------------------
     def _enrich_items(self, raw_items: List[Dict[str, Any]], rec_type: str, top_k: int) -> List[Dict[str, Any]]:
         results = []
-        for idx, item in enumerate(raw_items, start=1):
-            pid = str(item.get("product_id"))
-            meta = self.catalog_map.get(pid)
-            if not meta:
+        for item in raw_items:
+            if not isinstance(item, dict):
                 continue
-            merged = dict(meta)
+            pid = str(item.get("product_id") or "")
+            if not pid:
+                continue
+
+            # Kết hợp dữ liệu có sẵn trong document Cosmos DB và metadata catalog trên RAM
+            meta = self.catalog_map.get(pid)
+            merged = {**item, **meta} if meta else dict(item)
+            if not merged.get("name"):
+                continue
+
+            raw_large = merged.get("large_urls")
+            if hasattr(raw_large, "tolist"):
+                large_urls = raw_large.tolist()
+            elif isinstance(raw_large, list):
+                large_urls = raw_large
+            else:
+                large_urls = []
+
+            thumb = merged.get("thumbnail_url") or merged.get("thumb_url") or merged.get("image_url")
+            img = merged.get("image_url") or merged.get("hi_res_url") or thumb
+
+            merged["product_id"] = pid
+            merged["name"] = str(merged["name"])
+            merged["category"] = merged.get("category") or "Musical Instruments"
+            merged["price"] = float(merged.get("price") or 0.0)
+            merged["thumbnail_url"] = thumb
+            merged["thumb_url"] = merged.get("thumb_url") or thumb
+            merged["image_url"] = img
+            merged["hi_res_url"] = merged.get("hi_res_url") or img
+            merged["large_urls"] = large_urls
+            merged["stock_quantity"] = int(merged.get("stock_quantity") or 100)
+            merged["rating"] = float(merged.get("rating") or 4.6)
+            merged["rating_count"] = int(merged.get("rating_count") or 25)
             merged["score"] = round(float(item.get("score") or item.get("similarity_score") or 0.0), 4)
             merged["rank"] = len(results) + 1
             merged["recommendation_type"] = rec_type
             if "bundle_type" in item:
                 merged["bundle_type"] = item["bundle_type"]
+
             results.append(merged)
             if len(results) >= top_k:
                 break
@@ -384,7 +447,11 @@ class RecommenderCosmosClient:
         if self.cosmos_connected and self.meta_container is not None:
             try:
                 doc = self.meta_container.read_item(item="popular_items", partition_key="popular_items")
-                raw = doc.get("items") or [{"product_id": pid, "score": 5.0} for pid in doc.get("popular_product_ids", [])]
+                raw = (
+                    doc.get("recommendations")
+                    or doc.get("items")
+                    or [{"product_id": pid, "score": 5.0} for pid in doc.get("popular_product_ids", [])]
+                )
                 items = self._enrich_items(raw, rec_type="popular", top_k=top_k)
                 if items:
                     data_source = "cosmos_db"
@@ -421,7 +488,7 @@ class RecommenderCosmosClient:
                 items = self._enrich_items(doc.get("recommendations", []), rec_type="personalized", top_k=top_k)
                 if items:
                     res = {
-                        "strategy": "svd_personalized",
+                        "strategy": doc.get("strategy") or "svd_personalized",
                         "data_source": "cosmos_db",
                         "model_version": doc.get("model_version", self.model_version),
                         "recommendations": items,
@@ -432,32 +499,34 @@ class RecommenderCosmosClient:
                 pass
 
         # 2. Tính trực tiếp từ ma trận TruncatedSVD trên RAM (HF default hoặc ML updated)
-        if self.svd_data is not None and user_id in self.svd_data.get("user2idx", {}):
-            u_idx = self.svd_data["user2idx"][user_id]
-            P = self.svd_data["P"]
-            Q = self.svd_data["Q"]
-            idx2item = self.svd_data["idx2item"]
+        if isinstance(self.svd_data, dict):
+            user2idx = self.svd_data.get("user2idx") or self.svd_data.get("user_to_idx") or {}
+            if user_id in user2idx and "P" in self.svd_data and "Q" in self.svd_data:
+                u_idx = user2idx[user_id]
+                P = self.svd_data["P"]
+                Q = self.svd_data["Q"]
+                idx2item = self.svd_data.get("idx2item") or {i: pid for i, pid in enumerate(self.sim_item_ids)}
 
-            scores = P[u_idx] @ Q.T
-            ranked_indices = np.argsort(scores)[::-1]
-            raw = [
-                {"product_id": str(idx2item[it_idx]), "score": float(scores[it_idx])}
-                for it_idx in ranked_indices[: top_k * 2]
-            ]
-            items = self._enrich_items(raw, rec_type="personalized", top_k=top_k)
-            if items:
-                res = {
-                    "strategy": "svd_personalized",
-                    "data_source": "in_memory_svd",
-                    "model_version": self.model_version,
-                    "recommendations": items,
-                }
-                self._cache[cache_key] = (time.time(), res)
-                return res
+                scores = P[u_idx] @ Q.T
+                ranked_indices = np.argsort(scores)[::-1]
+                raw = [
+                    {"product_id": str(idx2item[int(it_idx)]), "score": float(scores[it_idx])}
+                    for it_idx in ranked_indices[: top_k * 2]
+                    if int(it_idx) in idx2item
+                ]
+                items = self._enrich_items(raw, rec_type="personalized", top_k=top_k)
+                if items:
+                    res = {
+                        "strategy": "svd_personalized",
+                        "data_source": "in_memory_svd",
+                        "model_version": self.model_version,
+                        "recommendations": items,
+                    }
+                    self._cache[cache_key] = (time.time(), res)
+                    return res
 
         # 3. Cold-start fallback về Top Trending
-        trending = self.get_trending_recommendations(top_k=top_k)
-        return trending
+        return self.get_trending_recommendations(top_k=top_k)
 
     def get_frequently_bought_together(self, product_id: str, top_k: int = 5) -> Dict[str, Any]:
         self.check_for_model_updates()
@@ -483,24 +552,34 @@ class RecommenderCosmosClient:
             except Exception:
                 pass
 
-        # 2. Tính từ ma trận Hybrid Item Similarity trên RAM
-        item2idx = (self.svd_data or {}).get("item2idx") or {pid: i for i, pid in enumerate(self.sim_item_ids)}
-        idx2item = (self.svd_data or {}).get("idx2item") or {i: pid for i, pid in enumerate(self.sim_item_ids)}
+        # 2. Tính từ ma trận Hybrid Item Similarity trên RAM (hỗ trợ cả sparse & dense)
+        item2idx = {pid: i for i, pid in enumerate(self.sim_item_ids)}
+        if not item2idx and isinstance(self.svd_data, dict):
+            item2idx = self.svd_data.get("item2idx") or self.svd_data.get("item_to_idx") or {}
+        idx2item = {int(i): str(pid) for pid, i in item2idx.items()}
 
         if self.hybrid_sim is not None and product_id in item2idx:
-            it_idx = item2idx[product_id]
+            it_idx = int(item2idx[product_id])
             if it_idx < self.hybrid_sim.shape[0]:
-                sims = self.hybrid_sim[it_idx].copy()
+                sims = (
+                    self.hybrid_sim[it_idx].toarray().ravel()
+                    if sp.issparse(self.hybrid_sim)
+                    else np.asarray(self.hybrid_sim[it_idx]).ravel().copy()
+                )
                 sims[it_idx] = -1.0
-                top_indices = np.argsort(sims)[::-1][: top_k * 2]
+                top_indices = np.argsort(sims)[::-1][: top_k * 3]
                 base_cat = self.catalog_map.get(product_id, {}).get("category", "")
                 raw = []
                 for b_idx in top_indices:
-                    b_pid = str(idx2item[int(b_idx)])
+                    b_idx_int = int(b_idx)
+                    sim_val = float(sims[b_idx_int])
+                    if sim_val <= 0 or b_idx_int not in idx2item:
+                        continue
+                    b_pid = idx2item[b_idx_int]
                     b_cat = self.catalog_map.get(b_pid, {}).get("category", "")
                     raw.append({
                         "product_id": b_pid,
-                        "similarity_score": float(sims[b_idx]),
+                        "similarity_score": sim_val,
                         "bundle_type": "accessory" if (base_cat and b_cat and base_cat != b_cat) else "co-purchase",
                     })
                 items = self._enrich_items(raw, rec_type="bundle", top_k=top_k)
@@ -520,9 +599,14 @@ class RecommenderCosmosClient:
             if pid != product_id and (not target_cat or self.catalog_map[pid].get("category") == target_cat)
         ]
         if len(same_cat_pids) < top_k:
-            same_cat_pids.extend([pid for pid in self.popular_product_ids if pid != product_id and pid not in same_cat_pids])
+            same_cat_pids.extend(
+                [pid for pid in self.popular_product_ids if pid != product_id and pid not in same_cat_pids]
+            )
 
-        raw_fb = [{"product_id": pid, "similarity_score": 0.5, "bundle_type": "co-purchase"} for pid in same_cat_pids[:top_k]]
+        raw_fb = [
+            {"product_id": pid, "similarity_score": 0.5, "bundle_type": "co-purchase"}
+            for pid in same_cat_pids[: top_k * 2]
+        ]
         items = self._enrich_items(raw_fb, rec_type="bundle", top_k=top_k)
         res = {
             "data_source": "fallback_catalog",
