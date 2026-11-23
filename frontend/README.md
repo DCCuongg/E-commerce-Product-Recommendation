@@ -8,8 +8,9 @@ A React 19 + TypeScript + Vite + Tailwind CSS 4 frontend for the team's **E-comm
 |---|---|---|
 | `/` | Editorial music-store homepage, categories, featured products, optional personalized recommendations | `GET /api/v1/products`, `GET /api/v1/recommendations/{user_id}`, `POST /api/v1/products/batch` |
 | `/shop` | Search, category filter, sorting, pagination | `GET /api/v1/products` |
-| `/products/:productId` | Product information, gallery, quantity and add to bag | `GET /api/v1/products/{id}`, `POST /api/v1/cart/items` |
-| `/cart` | Authenticated cart, quantity changes and remove | `GET /api/v1/cart`, `PUT /api/v1/cart/items/{id}` |
+| `/products/:productId` | Product information, high-resolution gallery, Add to Cart and Buy Now | `GET /api/v1/products/{id}`, `POST /api/v1/cart/items` |
+| `/cart` | Authenticated cart, quantity changes, remove and checkout navigation | `GET /api/v1/cart`, `PUT /api/v1/cart/items/{id}` |
+| `/checkout` | Checkout form and order submission (authenticated) | `POST /api/v1/orders/checkout` |
 | `/signin`, `/signup` | Authentication | Auth service |
 | `/profile`, `/profile/edit` | Account dashboard and profile editor | Auth service |
 | `/profile/purchases` | Purchase history, filter and order detail modal | Order service |
@@ -60,7 +61,7 @@ The Vite development server proxies `/api/v1/auth` to port 8001, `/api/v1/produc
 
 **Important price contract:** The UI displays monetary values as `vi-VN`/VND, including order and cart totals, **without exchange-rate conversion**. Confirm that your team's source database and backend API have converted all amounts into VND before using live data. If the backend still stores USD, you must migrate/convert values in backend/database, not simply relabel the numbers as VND. High-value VND product prices may also require increasing the database's current `NUMERIC(10,2)` precision.
 
-**Backend limitations:** Live profile updates (`PATCH /api/v1/auth/me`), notifications, courier milestones and payment details are not implemented in the referenced backend snapshot. The relevant actions are disabled or absent; the frontend does not fabricate API data. Shopping bag supports adds/updates; checkout and payment were intentionally not added in this release.
+**Backend limitations:** Live profile updates (`PATCH /api/v1/auth/me`), notifications, courier milestones and payment details are not implemented in the referenced backend snapshot. The relevant actions are disabled or absent; the frontend does not fabricate API data. Shopping bag supports add/update/remove, and the checkout page can create an order in the development backend. **The checkout API does not yet store shipping details or charge a payment method.** No real payment processing is implemented.
 
 **Authentication:** The prototype currently uses `sessionStorage` bearer tokens. Before accepting real users, review safer session management with the backend team. Public registration role assignment and password validation must also be enforced server-side.
 
@@ -68,8 +69,29 @@ The Vite development server proxies `/api/v1/auth` to port 8001, `/api/v1/produc
 
 - Demo and editorial imagery currently references freely usable Unsplash photos by URL; these require internet access and may be replaced with team-owned product images later.
 - If an image fails, the app falls back to `public/assets/instrument-placeholder.svg`.
-- **Production:** render product `thumb_url` / `image_url` from `GET /api/v1/products`; these should resolve to the team’s Azure Blob Storage assets. The React app should not embed Hugging Face access tokens or database secrets.
+- **Production:** render product `large_urls` / `hi_res_url` where practical, and fall back to `image_url` / `thumb_url` from `GET /api/v1/products`; these should resolve to the team’s Azure Blob Storage assets. The React app should not embed Hugging Face access tokens or database secrets.
 - All demo product names, prices and reviews are examples only.
+
+## Report fixes and presentation preferences (revision 7)
+
+- **E02 name-focused search:** Both homepage search and catalog search now match **product names only**, ignoring description-only matches. The backend's `/api/v1/products?search=` still matches descriptions; for searched lists, the frontend loads candidate pages (up to 100 products per request), filters every name, ranks exact / prefix / substring / all-word results, then paginates consistently. This makes searches more accurate but can issue extra read-only requests for broad queries. Ordinary catalog browsing remains server-paginated.
+- **E04 purchase-search overlap:** A dedicated `.purchase-search-input` class reserves enough left space for the search icon on mobile and desktop.
+- **Settings:** Hamburger menu on desktop/mobile; click-away and Escape dismissal; saved **light/dark theme** and **English/Vietnamese** preferences. When English is active the button says “Language: Vietnamese”; when Vietnamese is active it says “Ngôn ngữ: Tiếng Anh”. Demo UI text is translated. Backend product metadata stays in the language supplied by the API.
+- **Image quality:** Product cards prefer `large_urls[0]`, detail pages prefer `hi_res_url`, and both preserve aspect ratio (`object-contain`). Broken image requests fall back through alternate URLs. This cannot increase the actual source resolution; verify Azure Blob originals before migrating to Hugging Face assets.
+- **Current branch features preserved:** Buy Now, Checkout, interaction logging, the cart, and all account routes. The checkout test-only amber panel is hidden by default. For explicit **isolated development-database** rollback testing only, set `VITE_ENABLE_FAILURE_TEST=true` in `.env.local`, restart Vite, and unset it afterward.
+- **Known backend gaps (unchanged):** Profile edits and delivery address persistence require backend changes. The checkout UI clearly discloses that shipping/payment values are not yet stored or charged.
+
+### Quick quality checks
+
+```powershell
+cd D:\repogit\E-commerce-Product-Recommendation\frontend
+npm install
+npm run build
+npm run lint
+npm run dev
+```
+
+Test in both languages, both themes, and at mobile widths. Confirm search `mixer` excludes items where only the description mentions mixer, verify a multi-page search, check My Purchases search text/icon separation, inspect product cards and high-resolution image previews, and verify Buy Now / Checkout against **disposable** backend test data.
 
 ## Build and deployment
 

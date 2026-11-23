@@ -11,6 +11,10 @@ export default defineConfig({
       '/api/v1/products': { target: 'http://localhost:8002', changeOrigin: true },
       '/api/v1/cart': { target: 'http://localhost:8002', changeOrigin: true },
       '/api/v1/recommendations': { target: 'http://localhost:8003', changeOrigin: true },
+      '/api/LogInteractionFunction': {
+        target: 'http://localhost:7071',
+        changeOrigin: true,
+      },
     },
   },
 });
