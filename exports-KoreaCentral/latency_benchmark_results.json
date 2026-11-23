@@ -1,0 +1,54 @@
+{
+  "timestamp": "2026-11-23T14:53:34.098132+00:00",
+  "network_latency": [
+    {
+      "count": 100,
+      "min_ms": 106.49,
+      "mean_ms": 180.95,
+      "p50_ms": 147.88,
+      "p90_ms": 276.31,
+      "p99_ms": 409.58,
+      "max_ms": 413.08,
+      "label": "Korea Central (Same-Region)",
+      "url": "http://20.249.146.164/api/v1/recommendations/popular/trending",
+      "total_requests": 100,
+      "concurrency": 10,
+      "errors": 0,
+      "status_codes": {
+        "200": 100
+      },
+      "rps": 52.27
+    }
+  ],
+  "storage_latency": {
+    "Korea Central (Same-Region)": {
+      "cosmos_db_point_read": {
+        "count": 30,
+        "min_ms": 113.48,
+        "mean_ms": 163.3,
+        "p50_ms": 124.76,
+        "p90_ms": 187.4,
+        "p99_ms": 755.11,
+        "max_ms": 900.75
+      },
+      "blob_storage_write": {
+        "count": 30,
+        "min_ms": 97.0,
+        "mean_ms": 139.61,
+        "p50_ms": 105.05,
+        "p90_ms": 126.06,
+        "p99_ms": 767.3,
+        "max_ms": 1023.79
+      },
+      "blob_storage_read": {
+        "count": 30,
+        "min_ms": 95.14,
+        "mean_ms": 104.55,
+        "p50_ms": 103.29,
+        "p90_ms": 112.26,
+        "p99_ms": 132.64,
+        "max_ms": 137.18
+      }
+    }
+  }
+}

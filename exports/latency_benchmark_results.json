@@ -1,0 +1,54 @@
+{
+  "timestamp": "2026-11-23T15:57:24.568588+00:00",
+  "network_latency": [
+    {
+      "count": 100,
+      "min_ms": 101.56,
+      "mean_ms": 143.62,
+      "p50_ms": 122.78,
+      "p90_ms": 194.53,
+      "p99_ms": 320.22,
+      "max_ms": 321.16,
+      "label": "Malaysia West (Cross-Region)",
+      "url": "http://20.249.146.164/api/v1/recommendations/popular/trending",
+      "total_requests": 100,
+      "concurrency": 10,
+      "errors": 0,
+      "status_codes": {
+        "503": 100
+      },
+      "rps": 65.23
+    }
+  ],
+  "storage_latency": {
+    "Malaysia West (Cross-Region)": {
+      "cosmos_db_point_read": {
+        "count": 30,
+        "min_ms": 116.46,
+        "mean_ms": 159.0,
+        "p50_ms": 122.22,
+        "p90_ms": 143.61,
+        "p99_ms": 736.07,
+        "max_ms": 886.31
+      },
+      "blob_storage_write": {
+        "count": 30,
+        "min_ms": 93.51,
+        "mean_ms": 132.68,
+        "p50_ms": 101.82,
+        "p90_ms": 114.11,
+        "p99_ms": 730.88,
+        "max_ms": 981.47
+      },
+      "blob_storage_read": {
+        "count": 30,
+        "min_ms": 95.21,
+        "mean_ms": 108.97,
+        "p50_ms": 104.36,
+        "p90_ms": 122.41,
+        "p99_ms": 173.39,
+        "max_ms": 192.07
+      }
+    }
+  }
+}

@@ -1,17 +1,16 @@
 """
 scripts/latency_benchmark.py
 Kịch bản đo kiểm hiệu năng và độ trễ hệ thống (Rubric Tiêu chí 3.3 & 5.1):
-1. Network Latency: Bắn 100 requests đồng thời tới API (Southeast Asia vs East US / Local vs Cloud)
+1. Network Latency: Bắn 100 requests đồng thời tới API (Korea Central vs Malaysia West)
    để tính toán P50, P90, P99, Mean, Min, Max Latency và RPS.
 2. Storage Latency: Đo tốc độ đọc O(1) trên Azure Cosmos DB và ghi/đọc trên Azure Blob Storage.
-3. Xuất báo cáo JSON và biểu đồ PNG tự động vào thư mục exports/.
+3. Tích lũy báo cáo JSON theo --label và xuất biểu đồ PNG tự động vào thư mục exports/.
 """
 
 import argparse
 import asyncio
 import json
 import os
-import statistics
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -93,7 +92,6 @@ def benchmark_storage_layers(iterations: int = 30) -> dict:
     """Đo độ trễ truy xuất trực tiếp tầng lưu trữ Cosmos DB và Azure Blob Storage."""
     storage_results = {}
 
-    # 1. Cosmos DB Read Latency
     cosmos_endpoint = os.getenv("COSMOS_DB_ENDPOINT", "")
     cosmos_key = os.getenv("COSMOS_DB_PRIMARY_KEY", "")
     if cosmos_endpoint and cosmos_key and "<COSMOS" not in cosmos_key:
@@ -113,7 +111,6 @@ def benchmark_storage_layers(iterations: int = 30) -> dict:
         except Exception as exc:
             storage_results["cosmos_db_point_read"] = {"error": str(exc)}
 
-    # 2. Azure Blob Storage Write/Read Latency
     blob_conn = os.getenv("AZURE_STORAGE_CONNECTION_STRING", "")
     if blob_conn and "<AZURITE" not in blob_conn:
         try:
@@ -194,36 +191,29 @@ def export_chart(network_results: list[dict], output_png: Path):
 async def main():
     parser = argparse.ArgumentParser(description="Benchmark Latency giữa các Region & Storage")
     parser.add_argument(
-        "--sea-url",
+        "--url",
         type=str,
         default="http://localhost:8003/api/v1/recommendations/popular/trending",
-        help="URL endpoint khu vực Southeast Asia (hoặc Local)",
+        help="URL endpoint cần đo kiểm",
     )
     parser.add_argument(
-        "--eastus-url",
+        "--label",
         type=str,
-        default="",
-        help="URL endpoint khu vực East US (nếu triển khai đa vùng để đối chiếu)",
+        default="Korea Central (Same-Region)",
+        help="Nhãn định danh cho kịch bản đo kiểm",
     )
     parser.add_argument("--requests", type=int, default=100, help="Tổng số request mỗi kịch bản")
     parser.add_argument("--concurrency", type=int, default=10, help="Số luồng đồng thời")
+    parser.add_argument("--reset", action="store_true", help="Xóa dữ liệu cũ trước khi chạy")
     args = parser.parse_args()
 
-    print(f"=== BẮT ĐẦU ĐO ĐỘ TRỄ HỆ THỐNG ({args.requests} REQUESTS / KỊCH BẢN) ===\n")
+    print(f"=== ĐO ĐỘ TRỄ HỆ THỐNG [{args.label}] ({args.requests} REQUESTS) ===\n")
 
-    targets = [("Southeast Asia (Primary)", args.sea_url)]
-    if args.eastus_url:
-        targets.append(("East US (Cross-Region)", args.eastus_url))
-
-    network_results = []
-    for label, url in targets:
-        print(f" -> Đang đo Network Latency [{label}]: {url}")
-        res = await benchmark_http_endpoint(label, url, num_requests=args.requests, concurrency=args.concurrency)
-        network_results.append(res)
-        print(
-            f"    P50={res['p50_ms']}ms | P90={res['p90_ms']}ms | P99={res['p99_ms']}ms | "
-            f"Mean={res['mean_ms']}ms | RPS={res['rps']}"
-        )
+    res = await benchmark_http_endpoint(args.label, args.url, num_requests=args.requests, concurrency=args.concurrency)
+    print(
+        f" -> Network Latency: P50={res['p50_ms']}ms | P90={res['p90_ms']}ms | P99={res['p99_ms']}ms | "
+        f"Mean={res['mean_ms']}ms | RPS={res['rps']}"
+    )
 
     print("\n -> Đang đo Storage Latency (Cosmos DB & Blob Storage)...")
     storage_results = benchmark_storage_layers(iterations=30)
@@ -233,18 +223,33 @@ async def main():
         else:
             print(f"    {k}: {v}")
 
+    out_json = EXPORTS_DIR / "latency_benchmark_results.json"
+    existing_network: list[dict] = []
+    existing_storage: dict = {}
+
+    if out_json.exists() and not args.reset:
+        try:
+            with open(out_json, "r", encoding="utf-8") as f:
+                old_data = json.load(f)
+                existing_network = [r for r in old_data.get("network_latency", []) if r.get("label") != args.label]
+                existing_storage = old_data.get("storage_latency", {})
+        except Exception:
+            pass
+
+    existing_network.append(res)
+    existing_storage[args.label] = storage_results
+
     report = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "network_latency": network_results,
-        "storage_latency": storage_results,
+        "network_latency": existing_network,
+        "storage_latency": existing_storage,
     }
 
-    out_json = EXPORTS_DIR / "latency_benchmark_results.json"
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
-    print(f"\n[Report] Đã lưu chi tiết số liệu tại: {out_json}")
+    print(f"\n[Report] Đã lưu & tích lũy số liệu tại: {out_json}")
 
-    export_chart(network_results, EXPORTS_DIR / "latency_benchmark_chart.png")
+    export_chart(existing_network, EXPORTS_DIR / "latency_benchmark_chart.png")
 
 
 if __name__ == "__main__":
