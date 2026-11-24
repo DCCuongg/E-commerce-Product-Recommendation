@@ -279,6 +279,52 @@ const vi: Record<string,string> = {
   'Source':'Nguồn', 'Slot':'Phiên bản triển khai','Latency':'Độ trễ',
   'Card payment is not yet enabled.':'Chưa hỗ trợ thanh toán bằng thẻ.',
 
+
+  // Customer reviews and online payment choices
+  "COMMUNITY FEEDBACK": "PHẢN HỒI CỘNG ĐỒNG",
+  "Customer reviews": "Đánh giá từ khách hàng",
+  "Ratings and comments shared by Soundwave customers.": "Điểm sao và nhận xét từ khách hàng Soundwave.",
+  "review shown": "đánh giá được hiển thị",
+  "reviews shown": "đánh giá được hiển thị",
+  "Loading reviews...": "Đang tải đánh giá...",
+  "Unable to load customer reviews.": "Không thể tải đánh giá của khách hàng.",
+  "Review request failed": "Yêu cầu đánh giá thất bại",
+  "Unexpected review response from the server.": "Máy chủ trả dữ liệu đánh giá không đúng định dạng.",
+  "No customer reviews yet": "Chưa có đánh giá của khách hàng",
+  "Be the first to share your experience with this product.": "Hãy là người đầu tiên chia sẻ trải nghiệm về sản phẩm này.",
+  "Load more reviews (up to 100)": "Tải thêm đánh giá (tối đa 100)",
+  "Showing the 100 most recent reviews.": "Đang hiển thị 100 đánh giá mới nhất.",
+  "Write a review": "Viết đánh giá",
+  "Sign in to rate this instrument and share your feedback.": "Đăng nhập để chấm điểm và chia sẻ trải nghiệm về nhạc cụ này.",
+  "Sign in to review": "Đăng nhập để đánh giá",
+  "Your rating": "Số sao đánh giá",
+  "star": "sao",
+  "stars": "sao",
+  "Review title (optional)": "Tiêu đề đánh giá (không bắt buộc)",
+  "Summarize your experience": "Tóm tắt trải nghiệm của bạn",
+  "Your comment (optional)": "Nhận xét (không bắt buộc)",
+  "What did you like about this product?": "Bạn thích điều gì ở sản phẩm này?",
+  "Please choose a rating from 1 to 5 stars.": "Hãy chọn số sao từ 1 đến 5.",
+  "Your review was published.": "Đánh giá của bạn đã được đăng.",
+  "Unable to submit your review.": "Không thể gửi đánh giá của bạn.",
+  "Publishing review...": "Đang đăng đánh giá...",
+  "Publish review": "Đăng đánh giá",
+  "Reviews are public. Do not share private contact information.": "Đánh giá được hiển thị công khai. Không chia sẻ thông tin liên hệ riêng tư.",
+  "You": "Bạn",
+  "Soundwave customer": "Khách hàng Soundwave",
+  "Cannot reach the review service. Check that the Order API is running.": "Không thể kết nối dịch vụ đánh giá. Vui lòng kiểm tra Order API.",
+  "Please sign in to write a review.": "Vui lòng đăng nhập để viết đánh giá.",
+  "Shipping information is collected by the interface but not yet saved by the current Order API. Do not use real personal details for testing.": "Thông tin giao hàng chỉ được nhập trên giao diện, API đơn hàng hiện chưa lưu lại. Không dùng thông tin cá nhân thật khi kiểm thử.",
+  "Choose how you would like to pay for your order.": "Chọn cách thanh toán cho đơn hàng.",
+  "Place an order without paying online.": "Đặt hàng không cần thanh toán trực tuyến.",
+  "VietQR bank transfer": "Chuyển khoản ngân hàng VietQR",
+  "Scan a payment QR in your banking app.": "Quét mã QR thanh toán bằng ứng dụng ngân hàng.",
+  "VietQR integration pending": "Đang chờ tích hợp VietQR",
+  "The current backend cannot generate a VietQR payment request or confirm payment status. Online checkout is disabled to prevent an untracked transfer.": "Backend hiện chưa tạo được yêu cầu thanh toán VietQR hoặc xác nhận trạng thái thanh toán. Tạm khóa thanh toán trực tuyến để tránh giao dịch không được đối soát.",
+  "Prices are displayed in USD. The backend must return the payable amount in VND, a payment reference, an expiring QR code and a verified payment status.": "Giá trên website đang hiển thị bằng USD. Backend cần trả số tiền VND phải thanh toán, mã tham chiếu, QR có thời hạn và trạng thái thanh toán đã được xác thực.",
+  "The existing checkout API creates a confirmed order but does not record its COD payment method. Use only an isolated test environment until the backend is updated.": "API đặt hàng hiện tạo đơn ở trạng thái xác nhận ngay nhưng chưa lưu phương thức COD. Chỉ kiểm thử với môi trường dữ liệu riêng cho đến khi backend cập nhật.",
+  "VietQR unavailable": "Chưa thể thanh toán VietQR",
+  "VietQR cannot start until the backend provides a payment initiation API.": "Chưa thể thanh toán VietQR do backend chưa có API khởi tạo giao dịch.",
 };
 
 function initialLanguage(): Language { try {return localStorage.getItem(LANGUAGE_KEY) === 'vi' ? 'vi' : 'en';} catch{return 'en';} }
@@ -301,8 +347,8 @@ export function PreferencesProvider({children}:{children:ReactNode}){
   const value=useMemo<Preferences>(()=>({language,setLanguage,theme,setTheme,
     t:(english,vars)=>{
       if(language==='en') return interpolate(english,vars);
-      const matched=english.match(/^(Unable to fetch orders|Unable to load products|Unable to load product|Cart request failed|Request failed) \((\d{3})\)\.$/);
-      if(matched){const reason:Record<string,string>={'Unable to fetch orders':'Không thể tải đơn hàng','Unable to load products':'Không thể tải sản phẩm','Unable to load product':'Không thể tải sản phẩm','Cart request failed':'Không thể thực hiện thao tác với giỏ hàng','Request failed':'Yêu cầu thất bại'};return `${reason[matched[1]]} (${matched[2]}).`;}
+      const matched=english.match(/^(Unable to fetch orders|Unable to load products|Unable to load product|Cart request failed|Review request failed|Request failed) \((\d{3})\)\.$/);
+      if(matched){const reason:Record<string,string>={'Unable to fetch orders':'Không thể tải đơn hàng','Unable to load products':'Không thể tải sản phẩm','Unable to load product':'Không thể tải sản phẩm','Cart request failed':'Không thể thực hiện thao tác với giỏ hàng','Review request failed':'Yêu cầu đánh giá thất bại','Request failed':'Yêu cầu thất bại'};return `${reason[matched[1]]} (${matched[2]}).`;}
       return interpolate(vi[english]??english,vars);
     },
     date:(value,options)=>{if(!value)return language==='vi'?vi['Date unavailable']:'Date unavailable';const d=new Date(value);return Number.isNaN(d.getTime())?value:d.toLocaleDateString(language==='vi'?'vi-VN':'en-US',options??{year:'numeric',month:'short',day:'numeric'});},

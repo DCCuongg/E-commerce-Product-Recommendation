@@ -1,6 +1,6 @@
 import { DEMO_MODE } from './auth';
 
-export type InteractionAction = 'view' | 'click' | 'add_to_cart' | 'checkout' | 'purchase';
+export type InteractionAction = 'view' | 'click' | 'add_to_cart' | 'checkout' | 'purchase' | 'rating';
 
 const FAAS_ENDPOINT = (import.meta.env.VITE_FAAS_URL || '/api/LogInteractionFunction').replace(/\/$/, '');
 

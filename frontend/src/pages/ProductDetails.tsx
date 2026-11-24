@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Check, ChevronRight, Minus, Plus, ShoppingBag, Sparkles, Star, Zap } from 'lucide-react';
 import StoreHeader, { StoreFooter } from '../components/StoreHeader';
 import ProductCard from '../components/ProductCard';
+import ProductReviews from '../components/ProductReviews';
 import {
   formatVND,
   getFrequentlyBoughtTogether,
@@ -124,7 +125,7 @@ export default function ProductDetails() {
   return (
     <div className="min-h-screen bg-[#faf9f6] dark:bg-[#0b1322] dark:text-slate-100">
       <StoreHeader />
-      <main className="mx-auto max-w-[1280px] px-5 pb-16 pt-8 sm:px-8">
+      <main className="mx-auto max-w-7xl px-5 pb-16 pt-8 sm:px-8">
         <div className="mb-8 flex flex-wrap items-center gap-2 text-xs font-medium text-slate-400">
           <Link to="/" className="hover:text-indigo-600"><Tr text={'Home'}/></Link>
           <ChevronRight size={13} />
@@ -209,7 +210,7 @@ export default function ProductDetails() {
                 <div className="mt-8 flex items-center gap-2 text-sm">
                   <span className={`h-2 w-2 rounded-full ${product.stock_quantity > 0 ? 'bg-emerald-500' : 'bg-slate-400'}`} />
                   <span className="font-semibold text-slate-600 dark:text-slate-300">
-                    {product.stock_quantity > 0 ? `${product.stock_quantity} {t("available")}` : 'Out of stock'}
+                    {product.stock_quantity > 0 ? `${product.stock_quantity} ${t('available')}` : t('Out of stock')}
                   </span>
                 </div>
 
@@ -287,6 +288,10 @@ export default function ProductDetails() {
                 </div>
               </div>
             </div>
+
+            <ProductReviews key={product.id} productId={product.id} onPublished={() => {
+              void getProduct(product.id).then(setProduct).catch(() => { /* Keep the latest review visible even if product summary refresh fails. */ });
+            }} />
 
             <section className="mt-20 border-t border-[#eeebe5] dark:border-slate-700 pt-14">
               <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
