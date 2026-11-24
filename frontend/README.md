@@ -111,3 +111,19 @@ The included `Dockerfile` and `nginx.conf` remain aligned with the main branch A
 - https://tannhaccu.vn/collections/dan-piano
 
 The reference sites guided category discovery, editorial imagery, and clear product cards—not exact designs, assets, claims, or copy.
+
+## v8: Customer reviews and payment-method correction
+
+- Product Details now reads customer reviews with `GET /api/v1/products/{product_id}/reviews?limit=20` and allows signed-in customers to submit 1–5 stars, an optional title and an optional comment via `POST /api/v1/products/{product_id}/reviews` (JWT required). It refreshes reviews on success and logs the `rating` event to the existing FaaS function. Demonstration mode keeps examples in local browser storage, not PostgreSQL. The read API exposes only the most recent 100 reviews.
+- Checkout presents **Cash on Delivery** and **VietQR bank transfer**, removing card and e-wallet choices. **VietQR is intentionally non-submittable in this version.** Although the root README describes a VietQR workflow, the inspected `services/order_service/main.py` contains no payment initiation, QR generation, webhook, or payment-status API; it accepts only `items` and `simulate_failure` at checkout and immediately confirms an order. Do not generate a static payment QR, pretend payment was confirmed, or post ONLINE through the existing checkout endpoint.
+- Currency: the storefront formats prices in USD; a working VietQR flow must obtain the actual VND payable amount, reference code, expiry, QR image/payload and verified payment status from the backend before payment can be initiated. Shipping fields are currently not persisted by the Order API.
+- When the backend team delivers and documents its payment endpoints, connect the VietQR selector to an authenticated payment-initiation API, render the **server-returned** QR, poll/subscribe to payment status, and navigate to an order only after an authoritative response. Ensure expiration and cancellation are handled server-side.
+
+### Review test cases
+
+1. Open a product while logged out: GET reviews succeeds, submission asks for sign-in.
+2. Log in and select 1–5 stars, enter optional text, submit: POST returns 201, then GET refreshes and new review appears.
+3. Submit no stars: disabled/validation. Submit with expired token: backend error displayed; no false success.
+4. Switch language and theme: reviews and payment information retain readable labels and contrast.
+5. Select VietQR: no order is created, no QR or bank details are invented, and the checkout button is disabled.
+6. Select COD: existing checkout path remains available **for isolated development tests**; the backend still does not record the COD payment method.
