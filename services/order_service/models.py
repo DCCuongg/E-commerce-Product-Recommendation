@@ -1,24 +1,23 @@
 """
 services/order_service/models.py
-Định nghĩa ORM Models (SQLAlchemy) cho các bảng `products`, `cart_items`, `orders`, `order_items`, `reviews`
-và Pydantic Schemas cho Order/Cart/Product Service (Port 8002).
+Định nghĩa ORM Models (SQLAlchemy) cho các bảng `products`, `cart_items`, `orders`,
+`order_items`, `payment_transactions`, `reviews` và Pydantic Schemas (Port 8002).
 """
 
 import os
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
     DateTime,
-    Float,
     ForeignKey,
     Integer,
     Numeric,
@@ -76,7 +75,7 @@ def get_db():
 
 
 # ------------------------------------------------------------------------------
-# 2. SQLALCHEMY ORM MODELS (Khớp với 02_init_order_db.sql & etl_extractor.py)
+# 2. SQLALCHEMY ORM MODELS (Khớp 100% với 02_init_order_db.sql)
 # ------------------------------------------------------------------------------
 class Product(Base):
     __tablename__ = "products"
@@ -110,7 +109,7 @@ class CartItem(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String(50), nullable=False, index=True)
+    user_id = Column(String(50), nullable=False)
     product_id = Column(
         String(50), ForeignKey("products.id", ondelete="CASCADE"), nullable=False
     )
@@ -130,6 +129,20 @@ class CartItem(Base):
 
 class Order(Base):
     __tablename__ = "orders"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING', 'PENDING_PAYMENT', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED')",
+            name="check_order_status",
+        ),
+        CheckConstraint(
+            "payment_method IN ('COD', 'ONLINE')",
+            name="check_order_payment_method",
+        ),
+        CheckConstraint(
+            "payment_status IN ('UNPAID', 'PENDING', 'PAID', 'FAILED', 'EXPIRED', 'REFUNDED')",
+            name="check_order_payment_status",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(50), nullable=False, index=True)
@@ -138,8 +151,16 @@ class Order(Base):
         CheckConstraint("total_amount >= 0", name="check_total_non_negative"),
         nullable=False,
     )
-    status = Column(String(30), nullable=False, default="CONFIRMED")
+    status = Column(String(30), nullable=False, default="PENDING")
+    payment_method = Column(String(20), nullable=False, default="COD")
+    payment_status = Column(String(20), nullable=False, default="UNPAID")
+    payment_code = Column(String(50), unique=True, nullable=True)
+    payment_expires_at = Column(DateTime(timezone=True), nullable=True)
+    paid_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     items = relationship(
         "OrderItem",
@@ -156,7 +177,9 @@ class OrderItem(Base):
     order_id = Column(
         Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    product_id = Column(String(50), ForeignKey("products.id"), nullable=False)
+    product_id = Column(
+        String(50), ForeignKey("products.id"), nullable=False, index=True
+    )
     quantity = Column(
         Integer,
         CheckConstraint("quantity > 0", name="check_order_item_qty_positive"),
@@ -172,8 +195,30 @@ class OrderItem(Base):
     product = relationship("Product", lazy="joined")
 
 
+class PaymentTransaction(Base):
+    """Bảng `payment_transactions` lưu lịch sử đối soát thanh toán (Idempotent Audit Log)."""
+
+    __tablename__ = "payment_transactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(
+        Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    payment_code = Column(String(50), nullable=False, index=True)
+    provider = Column(String(50), nullable=False, default="VIETQR_GATEWAY")
+    provider_tx_id = Column(String(100), unique=True, nullable=True)
+    amount = Column(
+        Numeric(10, 2),
+        CheckConstraint("amount >= 0", name="check_payment_tx_amount_non_negative"),
+        nullable=False,
+    )
+    status = Column(String(20), nullable=False, default="SUCCESS")
+    raw_payload = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class Review(Base):
-    """Bảng `reviews` lưu đánh giá sản phẩm và cung cấp nguồn dữ liệu cho ml_pipeline/etl_extractor.py."""
+    """Bảng `reviews` lưu đánh giá sản phẩm và cung cấp nguồn dữ liệu cho ml_pipeline."""
 
     __tablename__ = "reviews"
 
@@ -185,7 +230,11 @@ class Review(Base):
         nullable=False,
         index=True,
     )
-    rating = Column(Float, nullable=False)
+    rating = Column(
+        Numeric(3, 2),
+        CheckConstraint("rating >= 1.0 AND rating <= 5.0", name="check_review_rating"),
+        nullable=False,
+    )
     title = Column(String(255), nullable=True)
     comment = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -287,7 +336,7 @@ class CartSummaryResponse(BaseModel):
     items: List[CartItemDetailResponse]
 
 
-# --- Schemas cho Đặt hàng & Checkout ---
+# --- Schemas cho Đặt hàng, Checkout & Thanh toán Online ---
 class OrderItemInput(BaseModel):
     product_id: str = Field(..., examples=["B01M4HO6RK"])
     quantity: int = Field(default=1, ge=1)
@@ -298,10 +347,25 @@ class CheckoutRequest(BaseModel):
         default=None,
         description="Danh sách mặt hàng muốn thanh toán. Nếu bỏ trống sẽ lấy toàn bộ giỏ hàng hiện tại của user.",
     )
+    payment_method: Literal["COD", "ONLINE"] = Field(
+        default="COD",
+        description="Phương thức thanh toán: COD hoặc ONLINE (VietQR).",
+    )
     simulate_failure: bool = Field(
         default=False,
-        description="Cờ kiểm thử: Nếu True, giả lập sự cố sau khi trừ kho để chứng minh ROLLBACK tự động hoàn trả tồn kho.",
+        description="Cờ kiểm thử: Nếu True, giả lập sự cố sau khi trừ kho để chứng minh ROLLBACK tự động.",
     )
+
+
+class PaymentQRInfo(BaseModel):
+    provider: str = "VIETQR"
+    bank_id: str
+    account_no: str
+    account_name: str
+    amount_vnd: int
+    payment_code: str
+    qr_image_url: str
+    expires_at: datetime
 
 
 class OrderItemResponse(BaseModel):
@@ -320,8 +384,47 @@ class OrderResponse(BaseModel):
     user_id: str
     total_amount: float
     status: str
+    payment_method: str
+    payment_status: str
+    payment_code: Optional[str] = None
+    payment_expires_at: Optional[datetime] = None
+    paid_at: Optional[datetime] = None
+    payment_info: Optional[PaymentQRInfo] = None
     created_at: Optional[datetime] = None
     items: List[OrderItemResponse]
+
+
+class OrderPaymentStatusResponse(BaseModel):
+    """Response gọn nhẹ phục vụ UI Polling mỗi 3-5 giây khi mở màn hình QR."""
+
+    order_id: int
+    status: str
+    payment_method: str
+    payment_status: str
+    payment_code: Optional[str] = None
+    paid_at: Optional[datetime] = None
+    payment_expires_at: Optional[datetime] = None
+    remaining_seconds: int = 0
+
+
+class PaymentWebhookRequest(BaseModel):
+    """
+    Hỗ trợ đồng thời định dạng chuẩn nội bộ và payload thực tế từ cổng ngân hàng (SePay / Casso).
+    """
+
+    payment_code: Optional[str] = Field(default=None, examples=["PAY20261125ABCD1234"])
+    content: Optional[str] = Field(
+        default=None,
+        description="Nội dung chuyển khoản ngân hàng (tự động trích xuất mã PAY... nếu có).",
+    )
+    provider: str = Field(default="VIETQR_GATEWAY")
+    provider_tx_id: Optional[str] = Field(default=None, examples=["FT2632899123"])
+    referenceCode: Optional[str] = Field(default=None, description="Mã tham chiếu SePay")
+    id: Optional[int | str] = Field(default=None, description="ID giao dịch từ cổng thanh toán")
+    amount: Optional[float] = Field(default=None, description="Số tiền thực nhận (VND)")
+    transferAmount: Optional[float] = Field(default=None, description="Số tiền chuyển khoản (SePay VND)")
+    transferType: Optional[Literal["in", "out"]] = Field(default="in")
+    status: Literal["SUCCESS", "FAILED"] = "SUCCESS"
 
 
 # --- Schemas cho Đánh giá (Reviews) ---
@@ -332,6 +435,8 @@ class CreateReviewRequest(BaseModel):
 
 
 class ReviewResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     user_id: str
     product_id: str
@@ -339,6 +444,3 @@ class ReviewResponse(BaseModel):
     title: Optional[str] = None
     comment: Optional[str] = None
     created_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True

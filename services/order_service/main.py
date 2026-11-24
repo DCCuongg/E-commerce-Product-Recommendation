@@ -1,13 +1,16 @@
 """
 services/order_service/main.py
-Microservice 2: Quản lý Sản phẩm, Giỏ hàng, Đặt hàng & Khóa tồn kho (Port 8002).
+Microservice 2: Quản lý Sản phẩm, Giỏ hàng, Đặt hàng, Khóa tồn kho & Thanh toán Online (Port 8002).
 - Giao tiếp nội bộ sang Auth Service (Port 8001) qua `/api/v1/auth/verify-token` để xác thực người dùng.
 - Xử lý đặt hàng với Pessimistic Concurrency Control (`SELECT ... FOR UPDATE`).
+- Hỗ trợ thanh toán COD và ONLINE (VietQR động + Webhook đối soát xác thực Secret Key & số tiền thật).
 """
 
+import hmac
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -18,7 +21,14 @@ from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from .inventory_lock import execute_checkout_with_pessimistic_lock
+from .inventory_lock import (
+    build_vietqr_info,
+    calculate_expected_vnd,
+    ensure_utc,
+    execute_checkout_with_pessimistic_lock,
+    extract_payment_code,
+    release_expired_online_orders,
+)
 from .models import (
     AddToCartRequest,
     Base,
@@ -30,8 +40,11 @@ from .models import (
     CreateReviewRequest,
     Order,
     OrderItemResponse,
+    OrderPaymentStatusResponse,
     OrderResponse,
     PaginatedProductResponse,
+    PaymentTransaction,
+    PaymentWebhookRequest,
     Product,
     ProductResponse,
     Review,
@@ -46,32 +59,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger("order_service")
 
-# Cấu hình giao tiếp với Auth Service (Microservice 1)
+# Cấu hình giao tiếp với Auth Service & Bảo mật Webhook
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8001")
 JWT_SECRET_KEY = os.getenv(
     "JWT_SECRET_KEY", "ecommerce-recommender-super-secret-jwt-key-2026"
 )
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+PAYMENT_WEBHOOK_SECRET = os.getenv(
+    "PAYMENT_WEBHOOK_SECRET", "dev-payment-webhook-secret-2026"
+)
+ALLOW_DEV_X_USER_ID = os.getenv("ALLOW_DEV_X_USER_ID", "true").lower() == "true"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Đảm bảo các bảng dữ liệu (products, cart_items, orders, order_items, reviews) đã sẵn sàng."""
+    """Đảm bảo các bảng dữ liệu đã sẵn sàng khi khởi động."""
     try:
         Base.metadata.create_all(bind=engine)
-        logger.info("Đã kết nối PostgreSQL và xác nhận các bảng Order/Cart sẵn sàng.")
+        logger.info("Đã kết nối PostgreSQL và xác nhận các bảng Order/Cart/Payment sẵn sàng.")
     except Exception as exc:
         logger.warning(f"Không thể tự động khởi tạo bảng khi startup: {exc}")
     yield
 
 
 app = FastAPI(
-    title="E-Commerce Order, Cart & Product Service API",
+    title="E-Commerce Order, Cart, Payment & Product Service API",
     description=(
-        "Microservice quản lý Danh mục Sản phẩm, Giỏ hàng, Đặt hàng và Khóa bi quan tồn kho "
-        "(Pessimistic Concurrency Control - Port 8002)."
+        "Microservice quản lý Danh mục Sản phẩm, Giỏ hàng, Đặt hàng, Thanh toán Online (VietQR) "
+        "và Khóa bi quan tồn kho (Pessimistic Concurrency Control - Port 8002)."
     ),
-    version="1.0.0",
+    version="1.2.0",
     lifespan=lifespan,
 )
 
@@ -82,21 +99,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# Nén payload JSON trả về bằng Gzip
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 # ------------------------------------------------------------------------------
-# GIAO TIẾP NỘI BỘ GIỮA 2 MICROSERVICES (ORDER SERVICE -> AUTH SERVICE)
+# XÁC THỰC NGƯỜI DÙNG & XÁC THỰC CỔNG THANH TOÁN (WEBHOOK)
 # ------------------------------------------------------------------------------
 def verify_authenticated_user(
     authorization: Optional[str] = Header(default=None),
     x_user_id: Optional[str] = Header(default=None, alias="X-User-Id"),
 ) -> Dict[str, Any]:
-    """
-    Xác thực danh tính người dùng bằng cách gọi HTTP nội bộ sang `Auth Service`:
-    `GET http://auth-service:8001/api/v1/auth/verify-token`
-    """
+    """Xác thực người dùng qua Auth Service hoặc JWT cục bộ."""
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
         verify_url = f"{AUTH_SERVICE_URL.rstrip('/')}/api/v1/auth/verify-token"
@@ -141,7 +154,7 @@ def verify_authenticated_user(
                 detail=f"Token không hợp lệ hoặc đã hết hạn: {str(exc)}",
             )
 
-    if x_user_id and x_user_id.strip():
+    if ALLOW_DEV_X_USER_ID and x_user_id and x_user_id.strip():
         return {
             "valid": True,
             "user_id": x_user_id.strip(),
@@ -153,6 +166,91 @@ def verify_authenticated_user(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Yêu cầu đăng nhập (Thiếu Header Authorization: Bearer <token>).",
         headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def verify_payment_gateway_secret(
+    authorization: Optional[str] = Header(default=None),
+    x_webhook_secret: Optional[str] = Header(default=None, alias="X-Webhook-Secret"),
+    secure_token: Optional[str] = Header(default=None, alias="secure-token"),
+) -> None:
+    """
+    Chỉ cho phép ngân hàng / cổng thanh toán (SePay, Casso, PayOS...) gọi Webhook
+    khi cung cấp đúng `PAYMENT_WEBHOOK_SECRET` trong `.env`.
+    Hỗ trợ:
+    - `Authorization: Apikey <secret>` (SePay)
+    - `Authorization: Bearer <secret>`
+    - `X-Webhook-Secret: <secret>`
+    - `secure-token: <secret>` (Casso)
+    """
+    expected_secret = os.getenv("PAYMENT_WEBHOOK_SECRET", PAYMENT_WEBHOOK_SECRET).strip()
+    if not expected_secret:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server chưa cấu hình PAYMENT_WEBHOOK_SECRET.",
+        )
+
+    provided_token: Optional[str] = None
+    if authorization:
+        parts = authorization.strip().split(" ", 1)
+        if len(parts) == 2 and parts[0].lower() in ("apikey", "bearer"):
+            provided_token = parts[1].strip()
+    if not provided_token and x_webhook_secret:
+        provided_token = x_webhook_secret.strip()
+    if not provided_token and secure_token:
+        provided_token = secure_token.strip()
+
+    if not provided_token or not hmac.compare_digest(provided_token, expected_secret):
+        logger.warning("[WEBHOOK-DENIED] Từ chối request webhook không hợp lệ chữ ký/API Key.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized: Chỉ cổng thanh toán/ngân hàng hợp lệ mới được phép gọi Webhook.",
+        )
+
+
+# ------------------------------------------------------------------------------
+# HELPER CHUYỂN ĐỔI ORDER ORM -> ORDER RESPONSE
+# ------------------------------------------------------------------------------
+def _serialize_order(o: Order) -> OrderResponse:
+    items_resp: List[OrderItemResponse] = []
+    for oi in o.items:
+        prod = oi.product
+        u_price = float(oi.unit_price)
+        items_resp.append(
+            OrderItemResponse(
+                id=oi.id,
+                product_id=oi.product_id,
+                product_name=prod.name if prod else oi.product_id,
+                image_url=prod.image_url if prod else None,
+                thumb_url=(prod.thumb_url or prod.image_url) if prod else None,
+                quantity=oi.quantity,
+                unit_price=round(u_price, 2),
+                subtotal=round(u_price * oi.quantity, 2),
+            )
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    expires_at = ensure_utc(o.payment_expires_at)
+    is_still_payable = (
+        o.payment_method == "ONLINE"
+        and o.payment_status == "PENDING"
+        and o.status == "PENDING_PAYMENT"
+        and (expires_at is None or now_utc <= expires_at)
+    )
+
+    return OrderResponse(
+        id=o.id,
+        user_id=o.user_id,
+        total_amount=round(float(o.total_amount), 2),
+        status=o.status,
+        payment_method=o.payment_method,
+        payment_status=o.payment_status,
+        payment_code=o.payment_code,
+        payment_expires_at=o.payment_expires_at,
+        paid_at=o.paid_at,
+        payment_info=build_vietqr_info(o) if is_still_payable else None,
+        created_at=o.created_at,
+        items=items_resp,
     )
 
 
@@ -179,6 +277,7 @@ def health_check(db: Session = Depends(get_db)):
         "port": 8002,
         "database": db_status,
         "total_products": product_count,
+        "usd_to_vnd_rate": int(os.getenv("USD_TO_VND_RATE", "1000")),
         "auth_service_url": AUTH_SERVICE_URL,
     }
 
@@ -203,7 +302,6 @@ def list_products(
     ),
     db: Session = Depends(get_db),
 ):
-    """Lấy danh sách sản phẩm nhạc cụ đang mở bán (`is_active = TRUE`)."""
     query = db.query(Product).filter(Product.is_active.is_(True))
 
     if category and category.strip() and category.lower() != "all":
@@ -244,7 +342,6 @@ def list_products(
 
 @app.get("/api/v1/products/categories", tags=["Products Catalog"])
 def list_categories(db: Session = Depends(get_db)):
-    """Lấy danh sách các danh mục sản phẩm kèm số lượng mặt hàng."""
     rows = (
         db.query(Product.category, func.count(Product.id).label("count"))
         .filter(Product.is_active.is_(True), Product.category.isnot(None))
@@ -255,9 +352,7 @@ def list_categories(db: Session = Depends(get_db)):
     return {
         "total_categories": len(rows),
         "categories": [
-            {"category": r.category, "count": r.count}
-            for r in rows
-            if r.category
+            {"category": r.category, "count": r.count} for r in rows if r.category
         ],
     }
 
@@ -268,7 +363,6 @@ def list_categories(db: Session = Depends(get_db)):
     tags=["Products Catalog"],
 )
 def get_products_batch(payload: BatchProductsRequest, db: Session = Depends(get_db)):
-    """Lấy thông tin chi tiết của nhiều sản phẩm cùng lúc theo mảng `product_ids` (giữ đúng thứ tự)."""
     if not payload.product_ids:
         return []
     products = (
@@ -286,7 +380,6 @@ def get_products_batch(payload: BatchProductsRequest, db: Session = Depends(get_
     tags=["Products Catalog"],
 )
 def get_product_detail(product_id: str, db: Session = Depends(get_db)):
-    """Lấy thông tin chi tiết của 1 sản phẩm và số lượng tồn kho thực tế."""
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(
@@ -307,9 +400,7 @@ def get_product_detail(product_id: str, db: Session = Depends(get_db)):
         if review_stats and review_stats.avg_rating is not None
         else 4.6
     )
-    rating_count = (
-        int(review_stats.cnt) if review_stats and review_stats.cnt else 25
-    )
+    rating_count = int(review_stats.cnt) if review_stats and review_stats.cnt else 25
 
     return ProductResponse.from_orm_product(
         product, rating=avg_rating, rating_count=rating_count
@@ -368,9 +459,7 @@ def get_cart(
     user_claims: Dict[str, Any] = Depends(verify_authenticated_user),
     db: Session = Depends(get_db),
 ):
-    """Lấy danh sách sản phẩm trong giỏ hàng của người dùng hiện tại."""
-    user_id = user_claims["user_id"]
-    return _build_cart_summary(user_id, db)
+    return _build_cart_summary(user_claims["user_id"], db)
 
 
 @app.post("/api/v1/cart/items", response_model=CartSummaryResponse, tags=["Shopping Cart"])
@@ -379,9 +468,7 @@ def add_item_to_cart(
     user_claims: Dict[str, Any] = Depends(verify_authenticated_user),
     db: Session = Depends(get_db),
 ):
-    """Thêm sản phẩm vào giỏ hàng (Kiểm tra nhanh tồn kho trước khi thêm)."""
     user_id = user_claims["user_id"]
-
     product = (
         db.query(Product)
         .filter(Product.id == payload.product_id, Product.is_active.is_(True))
@@ -443,9 +530,7 @@ def update_cart_item_quantity(
     user_claims: Dict[str, Any] = Depends(verify_authenticated_user),
     db: Session = Depends(get_db),
 ):
-    """Cập nhật số lượng của một sản phẩm trong giỏ hàng (nếu quantity == 0 sẽ xóa khỏi giỏ)."""
     user_id = user_claims["user_id"]
-
     cart_item = (
         db.query(CartItem)
         .filter(CartItem.user_id == user_id, CartItem.product_id == product_id)
@@ -463,7 +548,12 @@ def update_cart_item_quantity(
         return _build_cart_summary(user_id, db)
 
     product = db.query(Product).filter(Product.id == product_id).first()
-    if product and product.stock_quantity < payload.quantity:
+    if not product or not product.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Sản phẩm '{product_id}' đã ngừng kinh doanh.",
+        )
+    if product.stock_quantity < payload.quantity:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Kho chỉ còn {product.stock_quantity} sản phẩm.",
@@ -484,7 +574,6 @@ def remove_cart_item(
     user_claims: Dict[str, Any] = Depends(verify_authenticated_user),
     db: Session = Depends(get_db),
 ):
-    """Xóa một mặt hàng khỏi giỏ hàng."""
     user_id = user_claims["user_id"]
     db.query(CartItem).filter(
         CartItem.user_id == user_id, CartItem.product_id == product_id
@@ -498,7 +587,6 @@ def clear_user_cart(
     user_claims: Dict[str, Any] = Depends(verify_authenticated_user),
     db: Session = Depends(get_db),
 ):
-    """Xóa toàn bộ giỏ hàng của người dùng."""
     user_id = user_claims["user_id"]
     db.query(CartItem).filter(CartItem.user_id == user_id).delete(
         synchronize_session=False
@@ -508,7 +596,7 @@ def clear_user_cart(
 
 
 # ------------------------------------------------------------------------------
-# 3. API ĐẶT HÀNG & THANH TOÁN VỚI KHÓA ĐỒNG BỘ (ORDERS & CONCURRENCY LOCK)
+# 3. API ĐẶT HÀNG & KHÓA ĐỒNG BỘ (ORDERS & PESSIMISTIC CONCURRENCY CHECKOUT)
 # ------------------------------------------------------------------------------
 @app.post(
     "/api/v1/orders/checkout",
@@ -521,17 +609,16 @@ def checkout_order(
     user_claims: Dict[str, Any] = Depends(verify_authenticated_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Thực hiện đặt hàng (Checkout) có áp dụng khóa bi quan `SELECT ... FOR UPDATE`.
-    """
     user_id = user_claims["user_id"]
     req_items = payload.items if payload else None
     sim_fail = payload.simulate_failure if payload else False
+    pay_method = payload.payment_method if payload else "COD"
 
     return execute_checkout_with_pessimistic_lock(
         db=db,
         user_id=user_id,
         requested_items=req_items,
+        payment_method=pay_method,
         clear_cart=(req_items is None or len(req_items) == 0),
         simulate_failure=sim_fail,
     )
@@ -548,7 +635,6 @@ def create_order_alias(
     user_claims: Dict[str, Any] = Depends(verify_authenticated_user),
     db: Session = Depends(get_db),
 ):
-    """Endpoint tương đương `/api/v1/orders/checkout`."""
     return checkout_order(payload=payload, user_claims=user_claims, db=db)
 
 
@@ -561,43 +647,16 @@ def list_user_orders(
     user_claims: Dict[str, Any] = Depends(verify_authenticated_user),
     db: Session = Depends(get_db),
 ):
-    """Lấy lịch sử đơn hàng của người dùng hiện tại."""
     user_id = user_claims["user_id"]
+    release_expired_online_orders(db, user_id=user_id)
+
     orders = (
         db.query(Order)
         .filter(Order.user_id == user_id)
         .order_by(Order.created_at.desc())
         .all()
     )
-    result: List[OrderResponse] = []
-    for o in orders:
-        items_resp = []
-        for oi in o.items:
-            prod = oi.product
-            u_price = float(oi.unit_price)
-            items_resp.append(
-                OrderItemResponse(
-                    id=oi.id,
-                    product_id=oi.product_id,
-                    product_name=prod.name if prod else oi.product_id,
-                    image_url=prod.image_url if prod else None,
-                    thumb_url=(prod.thumb_url or prod.image_url) if prod else None,
-                    quantity=oi.quantity,
-                    unit_price=round(u_price, 2),
-                    subtotal=round(u_price * oi.quantity, 2),
-                )
-            )
-        result.append(
-            OrderResponse(
-                id=o.id,
-                user_id=o.user_id,
-                total_amount=round(float(o.total_amount), 2),
-                status=o.status,
-                created_at=o.created_at,
-                items=items_resp,
-            )
-        )
-    return result
+    return [_serialize_order(o) for o in orders]
 
 
 @app.get(
@@ -610,11 +669,11 @@ def get_order_by_id(
     user_claims: Dict[str, Any] = Depends(verify_authenticated_user),
     db: Session = Depends(get_db),
 ):
-    """Xem chi tiết một đơn hàng cụ thể."""
     user_id = user_claims["user_id"]
     role = user_claims.get("role", "customer")
-    order = db.query(Order).filter(Order.id == order_id).first()
+    release_expired_online_orders(db, user_id=user_id)
 
+    order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -626,35 +685,276 @@ def get_order_by_id(
             detail="Bạn không có quyền xem đơn hàng này.",
         )
 
-    items_resp = []
-    for oi in order.items:
-        prod = oi.product
-        u_price = float(oi.unit_price)
-        items_resp.append(
-            OrderItemResponse(
-                id=oi.id,
-                product_id=oi.product_id,
-                product_name=prod.name if prod else oi.product_id,
-                image_url=prod.image_url if prod else None,
-                thumb_url=(prod.thumb_url or prod.image_url) if prod else None,
-                quantity=oi.quantity,
-                unit_price=round(u_price, 2),
-                subtotal=round(u_price * oi.quantity, 2),
-            )
+    return _serialize_order(order)
+
+
+@app.get(
+    "/api/v1/orders/{order_id}/payment-status",
+    response_model=OrderPaymentStatusResponse,
+    tags=["Online Payment"],
+)
+def get_order_payment_status(
+    order_id: int,
+    user_claims: Dict[str, Any] = Depends(verify_authenticated_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Endpoint siêu nhẹ dành cho Frontend Polling mỗi 3-5 giây khi người dùng đang mở QR.
+    Tự động giải phóng đơn nếu đã quá hạn `payment_expires_at`.
+    """
+    user_id = user_claims["user_id"]
+    role = user_claims.get("role", "customer")
+    release_expired_online_orders(db, user_id=user_id)
+
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Không tìm thấy đơn hàng #{order_id}.",
+        )
+    if order.user_id != user_id and role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn không có quyền xem trạng thái đơn hàng này.",
         )
 
-    return OrderResponse(
-        id=order.id,
-        user_id=order.user_id,
-        total_amount=round(float(order.total_amount), 2),
+    now_utc = datetime.now(timezone.utc)
+    expires_at = ensure_utc(order.payment_expires_at)
+    remaining = 0
+    if expires_at and order.payment_status == "PENDING" and expires_at > now_utc:
+        remaining = int((expires_at - now_utc).total_seconds())
+
+    return OrderPaymentStatusResponse(
+        order_id=order.id,
         status=order.status,
-        created_at=order.created_at,
-        items=items_resp,
+        payment_method=order.payment_method,
+        payment_status=order.payment_status,
+        payment_code=order.payment_code,
+        paid_at=order.paid_at,
+        payment_expires_at=order.payment_expires_at,
+        remaining_seconds=remaining,
     )
 
 
+@app.post(
+    "/api/v1/orders/{order_id}/cancel",
+    response_model=OrderResponse,
+    tags=["Orders & Concurrency Checkout"],
+)
+def cancel_user_order(
+    order_id: int,
+    user_claims: Dict[str, Any] = Depends(verify_authenticated_user),
+    db: Session = Depends(get_db),
+):
+    user_id = user_claims["user_id"]
+    role = user_claims.get("role", "customer")
+
+    order = (
+        db.query(Order)
+        .filter(Order.id == order_id)
+        .with_for_update(of=Order)
+        .first()
+    )
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Không tìm thấy đơn hàng #{order_id}.",
+        )
+    if order.user_id != user_id and role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn không có quyền hủy đơn hàng này.",
+        )
+
+    if order.status == "CANCELLED":
+        return _serialize_order(order)
+
+    if order.status not in ("PENDING", "PENDING_PAYMENT", "CONFIRMED"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Không thể hủy đơn hàng đang ở trạng thái '{order.status}'.",
+        )
+
+    sorted_items = sorted(order.items, key=lambda item: item.product_id)
+    for oi in sorted_items:
+        prod = (
+            db.query(Product)
+            .filter(Product.id == oi.product_id)
+            .with_for_update()
+            .first()
+        )
+        if prod:
+            prod.stock_quantity += oi.quantity
+
+    order.status = "CANCELLED"
+    if order.payment_status == "PAID":
+        order.payment_status = "REFUNDED"
+    elif order.payment_status == "PENDING":
+        order.payment_status = "EXPIRED"
+
+    db.commit()
+    db.refresh(order)
+    return _serialize_order(order)
+
+
 # ------------------------------------------------------------------------------
-# 4. API ĐÁNH GIÁ SẢN PHẨM (PRODUCT REVIEWS)
+# 4. API THANH TOÁN ONLINE & WEBHOOK ĐỐI SOÁT THẬT (BẢO VỆ BẰNG WEBHOOK SECRET)
+# ------------------------------------------------------------------------------
+@app.post(
+    "/api/v1/payments/webhook",
+    response_model=OrderResponse,
+    tags=["Online Payment"],
+    dependencies=[Depends(verify_payment_gateway_secret)],
+)
+def handle_payment_webhook(
+    payload: PaymentWebhookRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Chỉ nhận callback từ cổng thanh toán/ngân hàng có gửi kèm `PAYMENT_WEBHOOK_SECRET`.
+    - Hỗ trợ tự động trích xuất `payment_code` từ nội dung chuyển khoản (`content`).
+    - Đối soát chặt số tiền thực nhận (`transferAmount` / `amount` >= số tiền VND của đơn).
+    - Chống trùng lặp giao dịch qua `provider_tx_id` (Idempotent).
+    """
+    # 1. Bỏ qua các giao dịch tiền ra khỏi tài khoản (nếu dùng webhook biến động số dư)
+    if payload.transferType and payload.transferType.lower() == "out":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bỏ qua giao dịch tiền ra (transferType='out').",
+        )
+
+    # 2. Trích xuất mã thanh toán PAY...
+    resolved_code = extract_payment_code(payload.payment_code, payload.content)
+    if not resolved_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Không tìm thấy mã thanh toán hợp lệ (PAY...) trong payload hoặc nội dung chuyển khoản.",
+        )
+
+    # 3. Xác định mã giao dịch ngân hàng để đảm bảo Idempotency
+    raw_tx_id = (
+        payload.provider_tx_id
+        or payload.referenceCode
+        or (str(payload.id) if payload.id is not None else None)
+    )
+    if not raw_tx_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Thiếu mã giao dịch từ ngân hàng/cổng thanh toán (provider_tx_id / referenceCode / id).",
+        )
+
+    existing_tx = (
+        db.query(PaymentTransaction)
+        .filter(PaymentTransaction.provider_tx_id == raw_tx_id)
+        .first()
+    )
+    if existing_tx:
+        order = db.query(Order).filter(Order.id == existing_tx.order_id).first()
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Không tìm thấy đơn hàng liên kết với giao dịch.",
+            )
+        return _serialize_order(order)
+
+    # 4. Khóa dòng Order để cập nhật trạng thái an toàn
+    order = (
+        db.query(Order)
+        .filter(Order.payment_code == resolved_code)
+        .with_for_update(of=Order)
+        .first()
+    )
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Không tìm thấy đơn hàng với mã thanh toán '{resolved_code}'.",
+        )
+
+    if order.payment_status == "PAID":
+        return _serialize_order(order)
+
+    if order.status == "CANCELLED" or order.payment_status == "EXPIRED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Đơn hàng đã hủy hoặc hết hạn thanh toán.",
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    expires_at = ensure_utc(order.payment_expires_at)
+    if expires_at and now_utc > expires_at:
+        order.payment_status = "EXPIRED"
+        order.status = "CANCELLED"
+        sorted_items = sorted(order.items, key=lambda item: item.product_id)
+        for oi in sorted_items:
+            prod = (
+                db.query(Product)
+                .filter(Product.id == oi.product_id)
+                .with_for_update()
+                .first()
+            )
+            if prod:
+                prod.stock_quantity += oi.quantity
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Mã QR đã hết hạn thanh toán. Tồn kho đã được hoàn trả.",
+        )
+
+    # 5. Đối soát số tiền thực nhận từ ngân hàng (VND)
+    received_vnd = (
+        payload.transferAmount
+        if payload.transferAmount is not None
+        else payload.amount
+    )
+    if received_vnd is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Thiếu số tiền thực nhận (transferAmount hoặc amount) từ cổng thanh toán.",
+        )
+
+    expected_vnd = calculate_expected_vnd(order.total_amount)
+    if payload.status == "SUCCESS" and float(received_vnd) < float(expected_vnd):
+        logger.warning(
+            f"[UNDERPAID] Order #{order.id} ({resolved_code}): "
+            f"Nhận {received_vnd} VND < Yêu cầu {expected_vnd} VND"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Số tiền thanh toán ({int(received_vnd):,} VND) nhỏ hơn giá trị đơn hàng "
+                f"({expected_vnd:,} VND)."
+            ),
+        )
+
+    # 6. Lưu audit log & xác nhận đơn hàng
+    tx = PaymentTransaction(
+        order_id=order.id,
+        payment_code=order.payment_code,
+        provider=payload.provider,
+        provider_tx_id=raw_tx_id,
+        amount=round(float(received_vnd), 2),
+        status=payload.status,
+        raw_payload=payload.model_dump(),
+    )
+    db.add(tx)
+
+    if payload.status == "SUCCESS":
+        order.payment_status = "PAID"
+        order.status = "CONFIRMED"
+        order.paid_at = now_utc
+        logger.info(
+            f"[PAYMENT-SUCCESS] Order #{order.id} ({resolved_code}) đã thanh toán {int(received_vnd):,} VND (tx={raw_tx_id})."
+        )
+    else:
+        order.payment_status = "FAILED"
+
+    db.commit()
+    db.refresh(order)
+    return _serialize_order(order)
+
+
+# ------------------------------------------------------------------------------
+# 5. API ĐÁNH GIÁ SẢN PHẨM (PRODUCT REVIEWS)
 # ------------------------------------------------------------------------------
 @app.post(
     "/api/v1/products/{product_id}/reviews",
@@ -668,7 +968,6 @@ def create_product_review(
     user_claims: Dict[str, Any] = Depends(verify_authenticated_user),
     db: Session = Depends(get_db),
 ):
-    """Gửi đánh giá sao và nhận xét cho sản phẩm (Lưu vào bảng `reviews` phục vụ Retraining)."""
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(
@@ -699,7 +998,6 @@ def list_product_reviews(
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    """Lấy danh sách đánh giá của một sản phẩm."""
     reviews = (
         db.query(Review)
         .filter(Review.product_id == product_id)
