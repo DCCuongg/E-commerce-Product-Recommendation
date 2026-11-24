@@ -1,3 +1,9 @@
+## v8 — Review API integration and payment UI correction
+- Public product reviews and JWT-protected star rating/comments connected to FastAPI Order Service.
+- Review events recorded with the supported FaaS `rating` action; UI supports theme, translation and demo storage.
+- Online payment selector changed from cards/e-wallets to VietQR, with explicit backend-not-ready protection. COD-style test order behavior unchanged; no fake payment confirmation.
+- Existing v7 improvements and checkout/Buy Now preserved.
+
 # Frontend homepage release — v5
 
 - New independent music-store homepage at `/`: editorial hero, instrument collection cards, featured catalog tabs, optional authenticated recommendations, and discovery sections.
