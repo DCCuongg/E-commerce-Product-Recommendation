@@ -127,11 +127,11 @@ export default function ProductDetails() {
       <StoreHeader />
       <main className="mx-auto max-w-7xl px-5 pb-16 pt-8 sm:px-8">
         <div className="mb-8 flex flex-wrap items-center gap-2 text-xs font-medium text-slate-400">
-          <Link to="/" className="hover:text-indigo-600"><Tr text={'Home'}/></Link>
+          <Link to="/" className="hover:text-indigo-600"><Tr text={'Home'} /></Link>
           <ChevronRight size={13} />
-          <Link to="/shop" className="hover:text-indigo-600"><Tr text={'Instruments'}/></Link>
+          <Link to="/shop" className="hover:text-indigo-600"><Tr text={'Instruments'} /></Link>
           <ChevronRight size={13} />
-          <span className="text-slate-700 dark:text-slate-200"><Tr text={'Product details'}/></span>
+          <span className="text-slate-700 dark:text-slate-200"><Tr text={'Product details'} /></span>
         </div>
 
         {loading ? (
@@ -141,10 +141,10 @@ export default function ProductDetails() {
           </div>
         ) : error && !product ? (
           <div className="rounded-3xl bg-white dark:bg-slate-900 p-12 text-center">
-            <h1 className="text-2xl font-bold"><Tr text={'Product unavailable'}/></h1>
+            <h1 className="text-2xl font-bold"><Tr text={'Product unavailable'} /></h1>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{error || 'We could not find this instrument.'}</p>
             <Link to="/shop" className="mt-6 inline-flex items-center gap-2 font-bold text-indigo-600">
-              <ArrowLeft size={17} /><Tr text={'Back to collection'}/></Link>
+              <ArrowLeft size={17} /><Tr text={'Back to collection'} /></Link>
           </div>
         ) : product ? (
           <>
@@ -172,9 +172,8 @@ export default function ProductDetails() {
                         type="button"
                         key={url}
                         onClick={() => setImage(url)}
-                        className={`h-20 w-20 overflow-hidden rounded-xl border bg-white dark:bg-slate-900 ${
-                          image === url ? 'border-indigo-600 ring-2 ring-indigo-600/20' : 'border-slate-200 dark:border-slate-700'
-                        }`}
+                        className={`h-20 w-20 overflow-hidden rounded-xl border bg-white dark:bg-slate-900 ${image === url ? 'border-indigo-600 ring-2 ring-indigo-600/20' : 'border-slate-200 dark:border-slate-700'
+                          }`}
                       >
                         <img src={url} alt={t("Product alternate view")} className="h-full w-full object-contain p-1" />
                       </button>
@@ -245,7 +244,7 @@ export default function ProductDetails() {
                   >
                     {added ? (
                       <>
-                        <Check size={18} /><Tr text={'Added to bag'}/></>
+                        <Check size={18} /><Tr text={'Added to bag'} /></>
                     ) : (
                       <>
                         <ShoppingBag size={18} /> {t(busy ? 'Adding...' : 'Add to bag')}
@@ -259,11 +258,11 @@ export default function ProductDetails() {
                     onClick={onBuyNow}
                     className="inline-flex items-center gap-2 rounded-full border border-[#263247] bg-white dark:bg-slate-900 px-6 py-4 text-sm font-bold text-[#263247] dark:text-slate-100 transition hover:bg-slate-100 disabled:border-slate-200 disabled:text-slate-300"
                   >
-                    <Zap size={16} /><Tr text={'Buy now'}/></button>
+                    <Zap size={16} /><Tr text={'Buy now'} /></button>
                 </div>
 
                 {added && (
-                  <Link to="/cart" className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-indigo-600"><Tr text={'View your bag'}/><ArrowRight size={16} />
+                  <Link to="/cart" className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-indigo-600"><Tr text={'View your bag'} /><ArrowRight size={16} />
                   </Link>
                 )}
 
@@ -274,14 +273,14 @@ export default function ProductDetails() {
                 )}
 
                 <div className="mt-11 border-t border-slate-200 dark:border-slate-700 pt-7">
-                  <h2 className="text-lg font-bold"><Tr text={'Product information'}/></h2>
+                  <h2 className="text-lg font-bold"><Tr text={'Product information'} /></h2>
                   <dl className="mt-4 grid gap-3 text-sm">
                     <div className="flex justify-between">
-                      <dt className="text-slate-500 dark:text-slate-400"><Tr text={'Category'}/></dt>
+                      <dt className="text-slate-500 dark:text-slate-400"><Tr text={'Category'} /></dt>
                       <dd className="font-semibold">{product.category || 'Not specified'}</dd>
                     </div>
                     <div className="flex justify-between">
-                      <dt className="text-slate-500 dark:text-slate-400"><Tr text={'Product ID'}/></dt>
+                      <dt className="text-slate-500 dark:text-slate-400"><Tr text={'Product ID'} /></dt>
                       <dd className="font-mono text-xs">{product.id}</dd>
                     </div>
                   </dl>
@@ -289,16 +288,12 @@ export default function ProductDetails() {
               </div>
             </div>
 
-            <ProductReviews key={product.id} productId={product.id} onPublished={() => {
-              void getProduct(product.id).then(setProduct).catch(() => { /* Keep the latest review visible even if product summary refresh fails. */ });
-            }} />
-
             <section className="mt-20 border-t border-[#eeebe5] dark:border-slate-700 pt-14">
               <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
                 <div>
                   <p className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-[.2em] text-indigo-600">
-                    <Sparkles size={13} /><Tr text={'Cloud Recommender'}/></p>
-                  <h2 className="mt-2 font-['Georgia',serif] text-3xl tracking-[-.03em] text-[#242b37] dark:text-slate-100"><Tr text={'Frequently bought together'}/></h2>
+                    <Sparkles size={13} /><Tr text={'Cloud Recommender'} /></p>
+                  <h2 className="mt-2 font-['Georgia',serif] text-3xl tracking-[-.03em] text-[#242b37] dark:text-slate-100"><Tr text={'Frequently bought together'} /></h2>
                 </div>
                 {recsMeta && (
                   <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
@@ -334,9 +329,13 @@ export default function ProductDetails() {
                   ))}
                 </div>
               ) : (
-                <p className="rounded-2xl border border-[#eeebe5] dark:border-slate-700 bg-white dark:bg-slate-900 p-6 text-sm text-slate-500 dark:text-slate-400"><Tr text={'No complementary recommendations found for this instrument yet.'}/></p>
+                <p className="rounded-2xl border border-[#eeebe5] dark:border-slate-700 bg-white dark:bg-slate-900 p-6 text-sm text-slate-500 dark:text-slate-400"><Tr text={'No complementary recommendations found for this instrument yet.'} /></p>
               )}
             </section>
+            <ProductReviews key={product.id} productId={product.id} onPublished={() => {
+              void getProduct(product.id).then(setProduct).catch(() => { /* Keep the latest review visible even if product summary refresh fails. */ });
+            }} />
+
           </>
         ) : null}
       </main>

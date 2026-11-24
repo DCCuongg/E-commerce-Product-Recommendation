@@ -1,30 +1,336 @@
 import { Tr, usePreferences } from '../context/PreferencesContext';
 import { useEffect, useMemo, useState } from 'react';
-import { Archive, ArrowRight, Box, CalendarDays, CircleCheck, Clock3, Package, RefreshCcw, Search, ShoppingBag, Truck } from 'lucide-react';
+import {
+  Archive,
+  ArrowRight,
+  Box,
+  CalendarDays,
+  CircleCheck,
+  Clock3,
+  Package,
+  QrCode,
+  RefreshCcw,
+  Search,
+  ShoppingBag,
+  Truck,
+  Wallet,
+} from 'lucide-react';
 import { useAuth, TOKEN_KEY } from '../context/AuthContext';
 import { getOrders, formatMoney, type Order } from '../services/orders';
 import { Link, useLocation } from 'react-router-dom';
 
 type Filter = 'all' | 'ongoing' | 'completed';
-const completed = (status: string) => ['DELIVERED','COMPLETED','CANCELLED','CANCELED'].includes(status.toUpperCase());
-function Status({status}:{status:string}) {
-  const {t}=usePreferences();
-  const done = ['DELIVERED','COMPLETED'].includes(status.toUpperCase());
-  const cancelled = ['CANCELLED','CANCELED'].includes(status.toUpperCase());
-  return <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${cancelled?'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300':done?'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300':'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300'}`}>{done?<CircleCheck size={13}/>:cancelled?<Archive size={13}/>:<Clock3 size={13}/>} {t(status.toUpperCase())}</span>;
+
+const completed = (status: string) =>
+  ['DELIVERED', 'COMPLETED', 'CANCELLED', 'CANCELED'].includes(status.toUpperCase());
+
+function Status({ status }: { status: string }) {
+  const { t } = usePreferences();
+  const upper = status.toUpperCase();
+  const done = ['DELIVERED', 'COMPLETED'].includes(upper);
+  const cancelled = ['CANCELLED', 'CANCELED'].includes(upper);
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${cancelled
+        ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300'
+        : done
+          ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+          : 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300'
+        }`}
+    >
+      {done ? <CircleCheck size={13} /> : cancelled ? <Archive size={13} /> : <Clock3 size={13} />}{' '}
+      {t(upper)}
+    </span>
+  );
 }
+
+function PaymentBadge({ order }: { order: Order }) {
+  const { t } = usePreferences();
+  const isOnline = order.payment_method === 'ONLINE';
+  const payStatus = (order.payment_status || 'PENDING').toUpperCase();
+
+  const badgeTone =
+    payStatus === 'PAID'
+      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200/70 dark:border-emerald-500/20'
+      : payStatus === 'EXPIRED' || payStatus === 'FAILED'
+        ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-200/70 dark:border-rose-500/20'
+        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200/70 dark:border-slate-700';
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${badgeTone}`}
+    >
+      {isOnline ? <QrCode size={12} /> : <Wallet size={12} />}
+      <span>{isOnline ? 'VietQR' : 'COD'}</span>
+      <span aria-hidden="true">·</span>
+      <span>{t(payStatus)}</span>
+    </span>
+  );
+}
+
 export default function Purchases() {
- const {t,date}=usePreferences();
- const location = useLocation();
- const {user} = useAuth(); const [orders,setOrders] = useState<Order[]>([]); const [loading,setLoading] = useState(true); const [error,setError] = useState(''); const [filter,setFilter] = useState<Filter>('all'); const [search,setSearch] = useState(''); const [retry,setRetry]=useState(0);
- useEffect(()=>{ const token=sessionStorage.getItem(TOKEN_KEY); if(!token||!user){setLoading(false);return;} let alive=true; setLoading(true);setError(''); getOrders(token,user.id).then(data=>{if(alive)setOrders(data)}).catch(e=>{if(alive)setError(e instanceof Error?e.message:'Could not load orders')}).finally(()=>{if(alive)setLoading(false)});return ()=>{alive=false}},[user?.id,retry]);
- const visible=useMemo(()=>orders.filter(o=>(filter==='all'||(filter==='completed'?completed(o.status):!completed(o.status)))&&(`${o.id} ${o.items.map(x=>x.product_name).join(' ')}`.toLowerCase().includes(search.toLowerCase()))),[orders,filter,search]);
- const inProgress=orders.filter(o=>!completed(o.status)).length; const past=orders.filter(o=>completed(o.status)).length;
- return <div className="space-y-6">
- <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="eyebrow"><Tr text={"SHOPPING ACTIVITY"}/></p><h1 className="page-title"><Tr text={"My purchases"}/></h1><p className="page-subtitle"><Tr text={"Track current orders, revisit past purchases, and review the items you bought."}/></p></div><div className="inline-flex items-center gap-2 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-700 dark:text-indigo-300"><Truck size={17}/>{' '}<Tr text={"Your order center"}/></div></div>
- <div className="grid gap-4 sm:grid-cols-3"><Metric icon={<ShoppingBag size={21}/>} value={orders.length} label="Total orders"/><Metric icon={<Truck size={21}/>} value={inProgress} label="Current orders"/><Metric icon={<CircleCheck size={21}/>} value={past} label="Past orders"/></div>
- <section className="panel overflow-hidden"><div className="flex flex-col gap-4 border-b border-slate-100 dark:border-slate-800 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex flex-wrap gap-2">{([['all','All orders'],['ongoing','Current'],['completed','Past purchases']] as const).map(([value,label])=><button key={value} onClick={()=>setFilter(value)} className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${filter===value?'bg-indigo-600 text-white shadow-md shadow-indigo-100':'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>{t(label)}</button>)}</div><div className="relative w-full sm:w-64"><Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-slate-400 dark:text-slate-400" size={17}/><input aria-label={t("Search orders")} className="input-base purchase-search-input w-full" placeholder={t("Search order or product")} value={search} onChange={e=>setSearch(e.target.value)}/></div></div>
- {loading?<div className="py-20 text-center text-slate-500 dark:text-slate-400"><Tr text={"Loading orders…"}/></div>:error?<div className="py-16 text-center"><p className="font-medium text-rose-700 dark:text-rose-300">{t(error)}</p><button onClick={()=>setRetry(x=>x+1)} className="secondary-button mt-5"><RefreshCcw size={16}/>{' '}<Tr text={"Retry"}/></button></div>:visible.length===0?<div className="flex flex-col items-center px-6 py-20 text-center"><span className="rounded-2xl bg-slate-100 dark:bg-slate-800 p-5 text-slate-400 dark:text-slate-400"><Package size={32}/></span><h3 className="mt-5 text-lg font-bold text-slate-900 dark:text-slate-100"><Tr text={"No orders found"}/></h3><p className="mt-2 max-w-sm text-sm leading-6 text-slate-500 dark:text-slate-400">{t(orders.length?'Try another filter or search term.':'Orders will appear here after you place a purchase.')}</p></div>:<div className="divide-y divide-slate-100">{visible.map(o=><article key={o.id} className="p-5 sm:p-6"><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><div className="rounded-xl bg-slate-100 dark:bg-slate-800 p-2.5 text-slate-500 dark:text-slate-400"><Box size={20}/></div><div><p className="font-bold text-slate-900 dark:text-slate-100">{t('Order')} #{o.id}</p><p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400"><CalendarDays size={13}/>{date(o.created_at)}</p></div></div><Status status={o.status}/></div><div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-100 dark:border-slate-800 bg-gradient-to-br from-indigo-50 to-slate-100 text-indigo-300">{o.items[0]?.thumb_url || o.items[0]?.image_url ? <img src={o.items[0].thumb_url || o.items[0].image_url || ''} alt={t(o.items[0]?.product_name || 'Product')} className="h-full w-full object-cover" onError={e=>{e.currentTarget.style.display='none'}}/> : <ShoppingBag size={25}/>}</span><div><p className="font-semibold text-slate-800 dark:text-slate-200">{t(o.items[0]?.product_name||'Order items')}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{o.items.length} {t('products')} · {o.items.reduce((n,i)=>n+i.quantity,0)} {t('items')}</p></div></div><div className="flex items-center justify-between gap-7 sm:justify-end"><div className="text-right"><p className="text-xs text-slate-400 dark:text-slate-400"><Tr text={"Order total"}/></p><p className="mt-1 text-lg font-extrabold text-slate-900 dark:text-slate-100">{formatMoney(o.total_amount)}</p></div><Link to={`/profile/purchases/${o.id}`} state={{ backgroundLocation: location }} className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 dark:border-indigo-600/40 bg-indigo-50 dark:bg-indigo-500/10 px-4 py-2.5 text-sm font-bold text-indigo-700 dark:text-indigo-300 transition hover:bg-indigo-100 dark:hover:bg-indigo-500/20"><Tr text={"View order"}/>{' '}<ArrowRight size={16}/></Link></div></div></article>)}</div>}
- </section></div>
+  const { t, date } = usePreferences();
+  const location = useLocation();
+  const { user } = useAuth();
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState<Filter>('all');
+  const [search, setSearch] = useState('');
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    const token = sessionStorage.getItem(TOKEN_KEY);
+    if (!token || !user) {
+      setLoading(false);
+      return;
+    }
+    let alive = true;
+    setLoading(true);
+    setError('');
+    getOrders(token, user.id)
+      .then((data) => {
+        if (alive) setOrders(data);
+      })
+      .catch((e) => {
+        if (alive) setError(e instanceof Error ? e.message : 'Could not load orders');
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user?.id, retry]);
+
+  const visible = useMemo(
+    () =>
+      orders.filter(
+        (o) =>
+          (filter === 'all' ||
+            (filter === 'completed' ? completed(o.status) : !completed(o.status))) &&
+          `${o.id} ${o.payment_code || ''} ${o.items.map((x) => x.product_name).join(' ')}`
+            .toLowerCase()
+            .includes(search.toLowerCase()),
+      ),
+    [orders, filter, search],
+  );
+
+  const inProgress = orders.filter((o) => !completed(o.status)).length;
+  const past = orders.filter((o) => completed(o.status)).length;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow">
+            <Tr text={'SHOPPING ACTIVITY'} />
+          </p>
+          <h1 className="page-title">
+            <Tr text={'My purchases'} />
+          </h1>
+          <p className="page-subtitle">
+            <Tr
+              text={
+                'Track current orders, revisit past purchases, and review the items you bought.'
+              }
+            />
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 px-4 py-2.5 text-sm font-medium text-indigo-700 dark:text-indigo-300">
+          <Truck size={17} /> <Tr text={'Your order center'} />
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Metric icon={<ShoppingBag size={21} />} value={orders.length} label="Total orders" />
+        <Metric icon={<Truck size={21} />} value={inProgress} label="Current orders" />
+        <Metric icon={<CircleCheck size={21} />} value={past} label="Past orders" />
+      </div>
+
+      <section className="panel overflow-hidden">
+        <div className="flex flex-col gap-4 border-b border-slate-100 dark:border-slate-800 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                ['all', 'All orders'],
+                ['ongoing', 'Current'],
+                ['completed', 'Past purchases'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => setFilter(value)}
+                className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${filter === value
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+              >
+                {t(label)}
+              </button>
+            ))}
+          </div>
+          <div className="relative w-full sm:w-64">
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-slate-400 dark:text-slate-400"
+              size={17}
+            />
+            <input
+              aria-label={t('Search orders')}
+              className="input-base purchase-search-input w-full"
+              placeholder={t('Search order or product')}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="py-20 text-center text-slate-500 dark:text-slate-400">
+            <Tr text={'Loading orders…'} />
+          </div>
+        ) : error ? (
+          <div className="py-16 text-center">
+            <p className="font-medium text-rose-700 dark:text-rose-300">{t(error)}</p>
+            <button onClick={() => setRetry((x) => x + 1)} className="secondary-button mt-5">
+              <RefreshCcw size={16} /> <Tr text={'Retry'} />
+            </button>
+          </div>
+        ) : visible.length === 0 ? (
+          <div className="flex flex-col items-center px-6 py-20 text-center">
+            <span className="rounded-2xl bg-slate-100 dark:bg-slate-800 p-5 text-slate-400 dark:text-slate-400">
+              <Package size={32} />
+            </span>
+            <h3 className="mt-5 text-lg font-bold text-slate-900 dark:text-slate-100">
+              <Tr text={'No orders found'} />
+            </h3>
+            <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500 dark:text-slate-400">
+              {t(
+                orders.length
+                  ? 'Try another filter or search term.'
+                  : 'Orders will appear here after you place a purchase.',
+              )}
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {visible.map((o) => {
+              const needsOnlinePay =
+                o.payment_method === 'ONLINE' &&
+                o.payment_status === 'PENDING' &&
+                o.status === 'PENDING_PAYMENT';
+
+              return (
+                <article key={o.id} className="p-5 sm:p-6">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-xl bg-slate-100 dark:bg-slate-800 p-2.5 text-slate-500 dark:text-slate-400">
+                        <Box size={20} />
+                      </div>
+                      <div>
+                        <p className="font-bold text-slate-900 dark:text-slate-100">
+                          {t('Order')} #{o.id}
+                        </p>
+                        <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                          <CalendarDays size={13} />
+                          {date(o.created_at)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <PaymentBadge order={o} />
+                      <Status status={o.status} />
+                    </div>
+                  </div>
+
+                  <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-100 dark:border-slate-800 bg-gradient-to-br from-indigo-50 to-slate-100 text-indigo-300">
+                        {o.items[0]?.thumb_url || o.items[0]?.image_url ? (
+                          <img
+                            src={o.items[0].thumb_url || o.items[0].image_url || ''}
+                            alt={t(o.items[0]?.product_name || 'Product')}
+                            className="h-full w-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <ShoppingBag size={25} />
+                        )}
+                      </span>
+                      <div>
+                        <p className="font-semibold text-slate-800 dark:text-slate-200">
+                          {t(o.items[0]?.product_name || 'Order items')}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {o.items.length} {t('products')} ·{' '}
+                          {o.items.reduce((n, i) => n + i.quantity, 0)} {t('items')}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-7 sm:justify-end">
+                      <div className="text-right">
+                        <p className="text-xs text-slate-400 dark:text-slate-400">
+                          <Tr text={'Order total'} />
+                        </p>
+                        <p className="mt-1 text-lg font-extrabold text-slate-900 dark:text-slate-100">
+                          {formatMoney(o.total_amount)}
+                        </p>
+                      </div>
+                      <Link
+                        to={`/profile/purchases/${o.id}`}
+                        state={{ backgroundLocation: location }}
+                        className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-bold transition ${needsOnlinePay
+                          ? 'bg-indigo-600 text-white shadow-sm hover:bg-indigo-700'
+                          : 'border border-indigo-200 dark:border-indigo-600/40 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/20'
+                          }`}
+                      >
+                        {needsOnlinePay ? (
+                          <>
+                            <QrCode size={16} /> <Tr text={'Pay with VietQR'} />
+                          </>
+                        ) : (
+                          <>
+                            <Tr text={'View order'} /> <ArrowRight size={16} />
+                          </>
+                        )}
+                      </Link>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </div>
+  );
 }
-function Metric({icon,value,label}:{icon:React.ReactNode;value:number;label:string}){const {t}=usePreferences();return <div className="panel flex items-center gap-4 p-5"><div className="rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 p-3 text-indigo-600 dark:text-indigo-400">{icon}</div><div><p className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">{value}</p><p className="text-sm text-slate-500 dark:text-slate-400">{t(label)}</p></div></div>}
+
+function Metric({
+  icon,
+  value,
+  label,
+}: {
+  icon: React.ReactNode;
+  value: number;
+  label: string;
+}) {
+  const { t } = usePreferences();
+  return (
+    <div className="panel flex items-center gap-4 p-5">
+      <div className="rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 p-3 text-indigo-600 dark:text-indigo-400">
+        {icon}
+      </div>
+      <div>
+        <p className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">{value}</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">{t(label)}</p>
+      </div>
+    </div>
+  );
+}
